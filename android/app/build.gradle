@@ -33,7 +33,10 @@ android {
     buildTypes {
         release {
             minifyEnabled false
+            // without a keystore the release APK would be unsigned and uninstallable,
+            // so fall back to the debug key until keystore secrets are configured
             if (ksFile.exists()) signingConfig signingConfigs.release
+            else signingConfig signingConfigs.debug
         }
     }
 

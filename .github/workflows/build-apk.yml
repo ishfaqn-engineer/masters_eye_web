@@ -1,0 +1,81 @@
+name: Build APK
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build web bundle
+        run: |
+          npm ci
+          npm run build
+
+      - name: Copy web bundle into Android assets
+        run: |
+          rm -rf android/app/src/main/assets/www
+          mkdir -p android/app/src/main/assets/www
+          cp -r dist/. android/app/src/main/assets/www/
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.5'
+
+      - name: Restore release keystore (optional)
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_FILE: ${{ secrets.ANDROID_KEYSTORE_FILE }}
+          KS_STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_STORE_PASS }}
+          KS_KEY_ALIAS: ${{ secrets.ANDROID_KEYSTORE_KEY_ALIAS }}
+          KS_KEY_PASS: ${{ secrets.ANDROID_KEYSTORE_KEY_PASS }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            name="${KS_FILE:-release.jks}"
+            printf '%s' "$KS_B64" | base64 -d > "android/$name"
+            {
+              printf 'storeFile=%s\n' "$name"
+              printf 'storePass=%s\n' "$KS_STORE_PASS"
+              printf 'keyAlias=%s\n' "$KS_KEY_ALIAS"
+              printf 'keyPass=%s\n' "$KS_KEY_PASS"
+            } > android/keystore.properties
+          else
+            echo "No keystore secrets set - signing with the debug key."
+          fi
+
+      - name: Assemble release APK
+        run: gradle -p android assembleRelease
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: masters-eye-apk
+          path: android/app/build/outputs/apk/release/*.apk
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android/app/build/outputs/apk/release/*.apk
+          generate_release_notes: true
