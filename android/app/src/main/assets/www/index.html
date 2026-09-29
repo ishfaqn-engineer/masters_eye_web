@@ -7,6 +7,20 @@
     <title>The Master's Eye - Joinery Mill Manager</title>
     <script>
       window.__me = { errs: [] };
+      /* Offline-safe avatar: any <img> that fails (no internet, dead link)
+         swaps to an inline SVG instead of showing a broken-image box. */
+      var ME_AVATAR =
+        "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='32'%20fill='%235d3a1a'/%3E%3Ccircle%20cx='32'%20cy='24'%20r='11'%20fill='%23f3f4f6'/%3E%3Cpath%20d='M11%2058c4-12%2011-17%2021-17s17%205%2021%2017z'%20fill='%23f3f4f6'/%3E%3C/svg%3E";
+      document.addEventListener(
+        'error',
+        function (e) {
+          var t = e.target;
+          if (!t || t.tagName !== 'IMG' || t.getAttribute('data-me-fallback')) return;
+          t.setAttribute('data-me-fallback', '1');
+          t.src = ME_AVATAR;
+        },
+        true
+      );
       addEventListener('error', function (e) {
         window.__me.errs.push(
           (e.message || e.type) + (e.filename ? ' @' + e.filename.split('/').pop() + ':' + e.lineno : '')
@@ -40,7 +54,7 @@
         }, 1500);
       });
     </script>
-    <script defer src="./assets/index-ELY1IiWN.js"></script>
+    <script defer src="./assets/index-C8dE0r1O.js"></script>
   </head>
   <body>
     <div id="root"></div>

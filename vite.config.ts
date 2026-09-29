@@ -4,6 +4,7 @@ import { defineConfig, Plugin } from 'vite';
    mode it triggers) must be stripped — old WebViews refuse type="module". */
 const classicScriptTag = (): Plugin => ({
   name: 'classic-script-tag',
+  apply: 'build',
   transformIndexHtml: (html: string) =>
     html.replace(/<script type="module"(\s+crossorigin)?\s+src=/g, '<script defer src='),
 });

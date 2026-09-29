@@ -1,5 +1,7 @@
 export type ID = string;
 
+import { saveBlob } from './lib/native';
+
 export type Worker = { id: ID; name: string; photo: string; rate: number; phone?: string };
 
 export type AttendanceDay = {
@@ -227,10 +229,11 @@ export function normalizeState(parsed: any, base: AppState = emptyState()): AppS
 export function loadState(): AppState {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return emptyState();
+    // a fresh install starts empty — never ship demo records
+    if (!raw) return blankState();
     const parsed = JSON.parse(raw);
-    if (parsed?.v !== 2) return emptyState();
-    return normalizeState(parsed);
+    if (parsed?.v !== 2) return blankState();
+    return normalizeState(parsed, blankState());
   } catch {
     // keep the damaged payload instead of silently destroying it —
     // the next boot starts fresh but the bytes survive for recovery
@@ -239,7 +242,7 @@ export function loadState(): AppState {
       if (raw) localStorage.setItem(KEY + ':corrupt', raw);
       console.warn('Master\'s Eye: stored data was unreadable; a copy was kept at', KEY + ':corrupt');
     } catch { /* storage itself is unavailable */ }
-    return emptyState();
+    return blankState();
   }
 }
 
@@ -325,6 +328,7 @@ export async function syncToDrive(state: AppState): Promise<{ ok: boolean; at: s
     if (e?.name === 'AbortError') return { ok: false, at };
   }
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  if (await saveBlob(blob, name)) return { ok: true, at };
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

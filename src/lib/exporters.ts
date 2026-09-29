@@ -3,6 +3,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { AppState, monthLabel, monthKey, daysInMonth, today } from '../store';
 import * as D from './derive';
+import { saveBlob } from './native';
 
 const cur = (n: number) => n.toLocaleString('en-US');
 
@@ -14,7 +15,10 @@ const localDate = (d: string) => {
 
 const dayName = (d: string) => localDate(d).toLocaleDateString('en', { weekday: 'long' });
 
-function download(blob: Blob, name: string) {
+/* WebView ignores <a download> for blob URLs — hand it to the Android shell
+   first, and only fall back to the anchor trick in a normal browser. */
+async function download(blob: Blob, name: string) {
+  if (await saveBlob(blob, name)) return;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -35,7 +39,7 @@ export function exportExcel(rows: (string | number)[][], filename: string, sheet
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-  download(new Blob([out], { type: 'application/octet-stream' }), filename + '.xlsx');
+  void download(new Blob([out], { type: 'application/octet-stream' }), filename + '.xlsx');
 }
 
 export function exportPdf(title: string, subtitle: string, head: string[], body: (string | number)[][], filename: string, foot?: string) {
@@ -67,7 +71,7 @@ export function exportPdf(title: string, subtitle: string, head: string[], body:
     doc.setFont('helvetica', 'normal');
     doc.text(foot, 40, fy, { maxWidth: doc.internal.pageSize.getWidth() - 80 });
   }
-  doc.save(filename + '.pdf');
+  void download(doc.output('blob'), filename + '.pdf');
 }
 
 type PdfSection = { title: string; head: string[]; body: (string | number)[][] };
@@ -113,7 +117,7 @@ function exportPdfSections(title: string, subtitle: string, sections: PdfSection
     doc.setFont('helvetica', 'normal');
     doc.text(foot, 40, y + 10, { maxWidth: doc.internal.pageSize.getWidth() - 80 });
   }
-  doc.save(filename + '.pdf');
+  void download(doc.output('blob'), filename + '.pdf');
 }
 
 /* cash paid against wood lots that no longer exist — without this note the
