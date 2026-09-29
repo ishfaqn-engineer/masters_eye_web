@@ -53,9 +53,16 @@ const SetupView = ({ state, setState, onLogin }: Props) => {
       <div className="text-[11px] font-bold opacity-50 mt-6 text-center max-w-xs">
         You can add Vendor and Team logins later from Settings.
       </div>
+      <Credit />
     </div>
   );
 };
+
+const Credit = () => (
+  <div className="text-[11px] font-black uppercase tracking-widest opacity-50 mt-8 text-center">
+    Designed by Dr. Ishfaq Najar
+  </div>
+);
 
 const EyeLogo = () => (
   <div className="w-20 h-20 rounded-3xl bg-white/10 border-2 border-white/20 flex items-center justify-center">
@@ -147,6 +154,7 @@ export default function LoginGate({ state, setState, onLogin }: Props) {
           </button>
         </div>
       )}
+      <Credit />
     </div>
   );
 }

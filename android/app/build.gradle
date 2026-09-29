@@ -2,6 +2,11 @@ plugins {
     id 'com.android.application'
 }
 
+// release signing — credentials live in ../keystore.properties (not in git)
+def ksProps = new Properties()
+def ksFile = file('../keystore.properties')
+if (ksFile.exists()) ksProps.load(new FileInputStream(ksFile))
+
 android {
     namespace 'com.masterseye.app'
     compileSdk 34
@@ -14,9 +19,21 @@ android {
         versionName "1.0"
     }
 
+    signingConfigs {
+        release {
+            if (ksFile.exists()) {
+                storeFile file("../" + ksProps['storeFile'])
+                storePassword ksProps['storePass']
+                keyAlias ksProps['keyAlias']
+                keyPassword ksProps['keyPass']
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
+            if (ksFile.exists()) signingConfig signingConfigs.release
         }
     }
 

@@ -375,8 +375,13 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
         </div>
       )}
 
-      <div className="flex items-center justify-center gap-2 text-[11px] font-bold text-gray-400 uppercase pb-2">
-        <Info size={14} /> The Master's Eye · v2
+      <div className="text-center pb-2">
+        <div className="flex items-center justify-center gap-2 text-[11px] font-bold text-gray-400 uppercase">
+          <Info size={14} /> The Master's Eye · v2
+        </div>
+        <div className="text-[11px] font-black text-gray-400 uppercase tracking-widest mt-1">
+          Designed by Dr. Ishfaq Najar
+        </div>
       </div>
 
       {/* ── Modals ────────────────────────────── */}
