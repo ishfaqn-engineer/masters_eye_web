@@ -1,7 +1,7 @@
 package com.masterseye.app;
 
 import android.app.Activity;
-import android.app.ActivityNotFoundException;
+import android.content.ActivityNotFoundException;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -319,12 +319,7 @@ public class MainActivity extends Activity {
             if (callback == null) return;
             Uri[] results = null;
             if (resultCode == RESULT_OK && data != null) {
-                String[] paths =
-                        WebChromeClient.FileChooserParams.parseResult(resultCode, data);
-                if (paths != null) {
-                    results = new Uri[paths.length];
-                    for (int i = 0; i < paths.length; i++) results[i] = Uri.parse(paths[i]);
-                }
+                results = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
             }
             callback.onReceiveValue(results);
             return;
