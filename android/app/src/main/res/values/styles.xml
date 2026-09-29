@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.MastersEye" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/wood_dark</item>
+        <item name="android:navigationBarColor">@color/wood_dark</item>
+        <item name="android:windowBackground">@color/wood_dark</item>
+    </style>
+</resources>
