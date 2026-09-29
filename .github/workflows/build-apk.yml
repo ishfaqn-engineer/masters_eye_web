@@ -30,15 +30,19 @@ jobs:
           mkdir -p android/app/src/main/assets/www
           cp -r dist/. android/app/src/main/assets/www/
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
       - name: Install Android platform
-        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+        run: |
+          set -e
+          sdkmanager=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools" \
+            -name sdkmanager -type f 2>/dev/null | sort -V | tail -n 1)
+          echo "using $sdkmanager"
+          yes | "$sdkmanager" --licenses > /dev/null 2>&1 || true
+          yes | "$sdkmanager" "platforms;android-34" "build-tools;34.0.0" > /dev/null
 
       - uses: gradle/actions/setup-gradle@v4
         with:
