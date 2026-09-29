@@ -5,11 +5,44 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%236b4423'/%3E%3Cellipse cx='32' cy='32' rx='20' ry='12' fill='white'/%3E%3Ccircle cx='32' cy='32' r='7' fill='%236b4423'/%3E%3C/svg%3E" />
     <title>The Master's Eye - Joinery Mill Manager</title>
-    <script type="module" crossorigin src="./assets/index-BEq6KmnD.js"></script>
-    <link rel="modulepreload" crossorigin href="./assets/rolldown-runtime-D2aABDIb.js">
-    <link rel="stylesheet" crossorigin href="./assets/index-DWBSblnk.css">
+    <script>
+      window.__me = { errs: [] };
+      addEventListener('error', function (e) {
+        window.__me.errs.push(
+          (e.message || e.type) + (e.filename ? ' @' + e.filename.split('/').pop() + ':' + e.lineno : '')
+        );
+      }, true);
+      addEventListener('unhandledrejection', function (e) {
+        window.__me.errs.push('unhandledrejection: ' + ((e.reason && e.reason.message) || e.reason));
+      });
+      addEventListener('load', function () {
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (root && root.childElementCount > 0) return;
+          var box = document.createElement('div');
+          box.id = 'me-diag';
+          box.style.cssText =
+            'position:fixed;inset:0;z-index:99999;background:#7f1d1d;color:#fff;padding:24px;' +
+            'font:13px/1.6 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;overflow:auto;text-align:left';
+          box.textContent =
+            "BLANK SCREEN DIAGNOSTIC - The Master's Eye\n\n" +
+            '#root children: ' + (root ? root.childElementCount : 'no #root element') + '\n' +
+            'scripts: ' +
+              Array.prototype.map
+                .call(document.scripts, function (s) { return s.src ? s.src.split('/').pop() : '(inline)'; })
+                .join(', ') +
+            '\n' +
+            'stylesheet count: ' + document.styleSheets.length + '\n' +
+            'errors: ' +
+              (window.__me.errs.length ? '\n - ' + window.__me.errs.join('\n - ') : 'none') +
+            '\n\n' + navigator.userAgent;
+          document.body.appendChild(box);
+        }, 1500);
+      });
+    </script>
+    <script defer src="./assets/index-ELY1IiWN.js"></script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"></div>
   </body>
 </html>

@@ -29,13 +29,37 @@ public class MainActivity extends Activity {
         @Override
         public WebResourceResponse shouldInterceptRequest(
                 WebView view, WebResourceRequest request) {
-            return assetLoader.shouldInterceptRequest(request.getUrl());
+            return withMimeType(
+                    assetLoader.shouldInterceptRequest(request.getUrl()),
+                    request.getUrl().getPath());
         }
 
         @Override
         public WebResourceResponse shouldInterceptRequest(
                 WebView view, String url) {
-            return assetLoader.shouldInterceptRequest(Uri.parse(url));
+            Uri uri = Uri.parse(url);
+            return withMimeType(assetLoader.shouldInterceptRequest(uri), uri.getPath());
+        }
+
+        /* AssetsPathHandler guesses the MIME type from the file extension and falls
+           back to "text/plain" — module scripts are then rejected outright, which
+           shows up as a completely blank screen. Pin the known types down. */
+        private static WebResourceResponse withMimeType(
+                WebResourceResponse response, String path) {
+            if (response == null || path == null) return response;
+            String p = path.toLowerCase(java.util.Locale.US);
+            String mime = null;
+            if (p.endsWith(".js") || p.endsWith(".mjs")) mime = "text/javascript";
+            else if (p.endsWith(".css")) mime = "text/css";
+            else if (p.endsWith(".html") || p.endsWith(".htm")) mime = "text/html";
+            else if (p.endsWith(".json")) mime = "application/json";
+            else if (p.endsWith(".svg")) mime = "image/svg+xml";
+            else if (p.endsWith(".png")) mime = "image/png";
+            else if (p.endsWith(".jpg") || p.endsWith(".jpeg")) mime = "image/jpeg";
+            if (mime != null && !mime.equals(response.getMimeType())) {
+                response.setMimeType(mime);
+            }
+            return response;
         }
     }
 
