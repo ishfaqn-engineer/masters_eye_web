@@ -22,11 +22,15 @@ await page.addStyleTag({ content: `* { transition: none !important; animation: n
 const jsErrors = [];
 page.on('pageerror', e => jsErrors.push(String(e.message).slice(0, 160)));
 page.on('console', m => { if (m.type() === 'error') jsErrors.push('console: ' + m.text().slice(0, 160)); });
-// accept confirms (so handlers run) and answer prompts with a number
+// accept confirms (so handlers run) and answer prompts contextually:
+// the change-PIN flow asks for the CURRENT pin first (must fail a wrong guess,
+// so prove it with the setup PIN 1234) — every other prompt gets 5000
 page.on('dialog', async d => {
   lastDialog = d.message();
-  if (d.type() === 'prompt') await d.accept('5000');
-  else await d.accept();
+  if (d.type() === 'prompt') {
+    if (d.message().toLowerCase().includes('current pin')) await d.accept('1234');
+    else await d.accept('5000');
+  } else await d.accept();
 });
 let lastDialog = '';
 

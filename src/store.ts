@@ -192,19 +192,35 @@ export function emptyState(): AppState {
 /* merge any parsed payload onto the base shape — shared by boot & file restore.
    Pass blankState() as base when restoring, so missing keys never re-seed demo data. */
 export function normalizeState(parsed: any, base: AppState = emptyState()): AppState {
+  // shape-guard the two collections whose malformed rows crash live screens
+  const attendance = Array.isArray(parsed?.attendance)
+    ? parsed.attendance
+        .filter((a: any) => a && typeof a.date === 'string')
+        .map((a: any) => ({
+          ...a,
+          presentIds: Array.isArray(a.presentIds) ? a.presentIds.filter((x: any) => typeof x === 'string') : [],
+          masterPresent: !!a.masterPresent,
+        }))
+    : [];
+  const ledger = Array.isArray(parsed?.ledger)
+    ? parsed.ledger
+        .filter((l: any) => l && typeof l.id === 'string' && Number.isFinite(Number(l.amount)))
+        .map((l: any) => ({ ...l, amount: Number(l.amount) }))
+    : [];
   return {
     ...base,
     ...parsed,
+    v: 2,
     settings: { ...base.settings, ...(parsed?.settings || {}) },
     accounts: Array.isArray(parsed?.accounts) ? parsed.accounts : base.accounts,
-    workers: Array.isArray(parsed?.workers) ? parsed.workers : base.workers,
-    attendance: Array.isArray(parsed?.attendance) ? parsed.attendance : [],
+    workers: Array.isArray(parsed?.workers) ? parsed.workers : [],
+    attendance,
     clients: Array.isArray(parsed?.clients) ? parsed.clients : [],
     vendors: Array.isArray(parsed?.vendors) ? parsed.vendors : [],
     woodLots: Array.isArray(parsed?.woodLots) ? parsed.woodLots : [],
     orders: Array.isArray(parsed?.orders) ? parsed.orders : [],
     expenses: Array.isArray(parsed?.expenses) ? parsed.expenses : [],
-    ledger: Array.isArray(parsed?.ledger) ? parsed.ledger : [],
+    ledger,
   } as AppState;
 }
 

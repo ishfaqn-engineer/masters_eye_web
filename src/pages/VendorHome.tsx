@@ -1,5 +1,5 @@
 import React from 'react';
-import { TreePine, Wallet, MessageCircle } from 'lucide-react';
+import { TreePine, Wallet } from 'lucide-react';
 import { AppState, monthLabel, today, Account } from '../store';
 import * as D from '../lib/derive';
 import { money, StatCard, WhatsAppBtn } from '../components/ui';

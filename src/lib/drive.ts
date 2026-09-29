@@ -29,6 +29,7 @@ function loadGis(): Promise<void> {
 
 export async function connectGoogle(clientId: string): Promise<string> {
   if (!clientId.trim()) throw new Error('No Google Client ID set — add one in Settings first.');
+  if (accessToken) return accessToken; // already authorised — no popup on every backup
   await loadGis();
   if (tokenPromise) return tokenPromise;
   tokenPromise = new Promise<string>((res, rej) => {
@@ -62,10 +63,11 @@ export async function connectGoogle(clientId: string): Promise<string> {
 export const isConnected = () => !!accessToken;
 
 export function disconnectGoogle() {
+  const token = accessToken; // grab before clearing — revoke must get the real token
   accessToken = null;
   tokenPromise = null;
   try {
-    window.google?.accounts?.oauth2?.revoke?.(accessToken || '', () => { /* noop */ });
+    if (token) window.google?.accounts?.oauth2?.revoke?.(token, () => { /* noop */ });
   } catch { /* best effort */ }
 }
 

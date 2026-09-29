@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Lock, KeyRound, UserPlus, ArrowRight } from 'lucide-react';
+import { Lock, KeyRound, ArrowRight } from 'lucide-react';
 import { AppState, Account, Role } from '../store';
-import { hashPin, makeAccount, verifyPin } from '../lib/auth';
+import { makeAccount, verifyPin } from '../lib/auth';
 import { Field, inputCls } from './ui';
 
 type Props = { state: AppState; setState: (s: AppState) => void; onLogin: (accountId: string) => void };
@@ -21,7 +21,8 @@ const SetupView = ({ state, setState, onLogin }: Props) => {
     setBusy(true);
     try {
       const acc = await makeAccount({ name: name.trim() || 'Master', role: 'master', pin, photo: state.settings.masterPhoto });
-      setState({ ...state, accounts: [acc] });
+      // append, never replace — a stale setup path must not wipe existing logins
+      setState({ ...state, accounts: [...state.accounts, acc] });
       onLogin(acc.id);
     } finally { setBusy(false); }
   };
@@ -68,12 +69,12 @@ const EyeLogo = () => (
 
 /* Login: pick account → enter PIN */
 export default function LoginGate({ state, setState, onLogin }: Props) {
-  const [mode, setMode] = useState<'login' | 'setup'>('login');
   const [picked, setPicked] = useState<Account | null>(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
 
-  if (mode === 'setup' || !state.accounts.length) {
+  // first run only: no logins exist yet, so force the setup screen
+  if (!state.accounts.length) {
     return <SetupView state={state} setState={setState} onLogin={onLogin} />;
   }
 
@@ -111,10 +112,6 @@ export default function LoginGate({ state, setState, onLogin }: Props) {
               <ArrowRight size={22} className="opacity-60 shrink-0" />
             </button>
           ))}
-          <button onClick={() => setMode('setup')}
-            className="w-full flex items-center justify-center gap-2 text-xs font-black uppercase opacity-50 py-3 active:scale-95">
-            <UserPlus size={16} /> Set up a new login
-          </button>
         </div>
       )}
 

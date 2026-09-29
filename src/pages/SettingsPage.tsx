@@ -1,11 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MessageCircle, Trash2, RefreshCw, Phone, Pencil, Upload, Users, HardDrive, Info, LogOut, KeyRound, Cloud, Plus, ShieldCheck } from 'lucide-react';
-import { AppState, Account, Role, blankState, normalizeState, Worker, today } from '../store';
+import { AppState, Account, Role, blankState, normalizeState, Worker } from '../store';
 import { money, Modal, Field, inputCls, PhotoInput, MoneyField, StatCard, WhatsAppBtn } from '../components/ui';
-import { waLink } from '../lib/whatsapp';
 import { clearFiles } from '../lib/files';
-import { hashPin, makeAccount } from '../lib/auth';
-import { connectGoogle, drivePush, drivePull, driveFileName, disconnectGoogle } from '../lib/drive';
+import { hashPin, makeAccount, verifyPin } from '../lib/auth';
+import { drivePush, drivePull, driveFileName, disconnectGoogle } from '../lib/drive';
 
 type Props = {
   state: AppState;
@@ -44,7 +43,6 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
     setEditMaster(false);
   };
   const saveWa = () => setState({ ...state, settings: { ...state.settings, whatsappNumber: wa.replace(/\D/g, '') } });
-  const testWa = () => window.open(waLink(wa, "Test message from The Master's Eye"), '_blank');
 
   const openRate = (t: Worker | 'master') => {
     if (t === 'master') setRateDraft({ name: state.settings.masterName, photo: state.settings.masterPhoto, rate: state.settings.masterRate, phone: '' });
@@ -93,6 +91,12 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
   };
 
   const changePin = async (acc: Account) => {
+    // changing your OWN pin requires proving the current one first
+    if (acc.id === account?.id) {
+      const oldPin = prompt('Enter your CURRENT PIN:') || '';
+      if (!oldPin) return;
+      if (!(await verifyPin(acc, oldPin))) { alert('Current PIN is wrong.'); return; }
+    }
     const pin = prompt(`New 4–6 digit PIN for ${acc.name}:`) || '';
     if (!/^\d{4,6}$/.test(pin)) { if (pin) alert('PIN must be 4 to 6 digits.'); return; }
     const pinHash = await hashPin(pin, acc.id);
@@ -127,8 +131,13 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
     setDriveMsg('Downloading from Google…');
     const res = await drivePull<any>(cid, driveFileName(account?.id || 'master'));
     if (res.ok && res.data) {
-      setState(normalizeState(res.data, blankState()));
-      setDriveMsg('✓ Restored from your Drive.');
+      // same guard as file restore — a wrong-version payload would brick the next boot
+      if (res.data?.v !== 2) {
+        setDriveMsg('✗ That Drive copy is not a Master\'s Eye v2 backup.');
+      } else {
+        setState(normalizeState(res.data, blankState()));
+        setDriveMsg('✓ Restored from your Drive.');
+      }
     } else {
       setDriveMsg(`✗ ${res.error}`);
     }
@@ -297,13 +306,16 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
           <input className={inputCls + ' text-sm'} value={gClientId} onChange={e => setGClientId(e.target.value)}
             placeholder="xxxx.apps.googleusercontent.com" />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+        {/* restore is master-only: a crafted backup would replace every login */}
+        <div className={`grid gap-3 ${isMaster ? 'grid-cols-2' : 'grid-cols-1'}`}>
           <button onClick={doDrivePush} className="py-3 rounded-2xl bg-blue-600 text-white font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2">
             <Cloud size={16} /> Backup to Drive
           </button>
-          <button onClick={doDrivePull} className="py-3 rounded-2xl bg-gray-100 font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2">
-            <Upload size={16} /> Restore from Drive
-          </button>
+          {isMaster && (
+            <button onClick={doDrivePull} className="py-3 rounded-2xl bg-gray-100 font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2">
+              <Upload size={16} /> Restore from Drive
+            </button>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-3 mt-2">
           <button onClick={saveClientId} className="py-3 rounded-2xl bg-wood/10 text-wood font-black uppercase text-xs active:scale-95">Save ID</button>
@@ -336,13 +348,17 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
             Last backup: {new Date(state.lastSync).toLocaleString()}
           </div>
         )}
-        <div className="h-3" />
-        <button onClick={() => restoreRef.current?.click()}
-          className="w-full py-4 rounded-2xl bg-blue-600 text-white font-black uppercase flex items-center justify-center gap-3 active:scale-95 shadow">
-          <Upload size={20} /> Restore from file
-        </button>
-        <input ref={restoreRef} type="file" accept="application/json,.json" className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; onRestoreFile(f); }} />
+        {isMaster && (
+          <>
+            <div className="h-3" />
+            <button onClick={() => restoreRef.current?.click()}
+              className="w-full py-4 rounded-2xl bg-blue-600 text-white font-black uppercase flex items-center justify-center gap-3 active:scale-95 shadow">
+              <Upload size={20} /> Restore from file
+            </button>
+            <input ref={restoreRef} type="file" accept="application/json,.json" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; onRestoreFile(f); }} />
+          </>
+        )}
       </div>
 
       {isMaster && (

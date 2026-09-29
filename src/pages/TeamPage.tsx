@@ -3,7 +3,7 @@ import { Users, Wallet, FileSpreadsheet, FileDown, Pencil, CheckCircle2, Circle,
 import { AppState, Worker, today, monthLabel } from '../store';
 import * as D from '../lib/derive';
 import Calendar from '../components/Calendar';
-import { money, Modal, Field, inputCls, PhotoInput, MoneyField, ExportRow, WhatsAppBtn, DeleteBtn } from '../components/ui';
+import { money, Modal, Field, inputCls, PhotoInput, MoneyField, ExportRow, WhatsAppBtn } from '../components/ui';
 import { exportAttendanceExcel, exportAttendancePdf, exportAllAttendanceExcel, exportAllAttendancePdf } from '../lib/exporters';
 import { wageMessage } from '../lib/whatsapp';
 
@@ -137,16 +137,21 @@ export default function TeamPage({ state, setState }: Props) {
           </button>
         </div>
 
-        <button
+        {/* outer is a div (not a button) so the edit button can't nest inside it,
+            and its click can't double as an attendance toggle */}
+        <div
+          role="button"
+          tabIndex={0}
           onClick={() => updateDay({ masterPresent: !day.masterPresent })}
-          className={`w-full flex items-center gap-3 p-3 rounded-2xl mb-3 transition active:scale-95 border-4
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); updateDay({ masterPresent: !day.masterPresent }); } }}
+          className={`w-full flex items-center gap-3 p-3 rounded-2xl mb-3 transition active:scale-95 border-4 cursor-pointer
             ${day.masterPresent ? 'border-green-500 bg-green-50' : 'border-gray-100 bg-gray-50'}`}
         >
           <img src={state.settings.masterPhoto || `https://i.pravatar.cc/300?u=master`} className="w-14 h-14 rounded-full object-cover" alt="" />
           <div className="flex-1 text-left">
             <div className="text-[10px] font-black uppercase text-gray-400">Master</div>
             <div className="font-black uppercase">{state.settings.masterName}</div>
-            <button onClick={() => startEdit('master')} title="Edit master rate"
+            <button onClick={e => { e.stopPropagation(); startEdit('master'); }} title="Edit master rate"
               className="text-xs font-bold text-wood bg-wood/10 px-2 py-0.5 rounded-lg active:scale-95 mt-0.5">
               Rs {money(state.settings.masterRate)}/day ✎
             </button>
@@ -154,7 +159,7 @@ export default function TeamPage({ state, setState }: Props) {
           {day.masterPresent
             ? <CheckCircle2 size={34} className="text-green-500" />
             : <Circle size={34} className="text-gray-300" />}
-        </button>
+        </div>
 
         <div className="grid grid-cols-3 gap-2">
           {state.workers.map(w => {
