@@ -39,8 +39,14 @@ export default function PaymentsPage({ state, setState }: Props) {
   const [editLed, setEditLed] = useState<LedgerEntry | null>(null);
   const [ledDraft, setLedDraft] = useState({ amount: 0, date: today(), note: '', method: '' as '' | 'cash' | 'online' });
 
-  // wage settlement now asks HOW the money was handed over: cash or online
+  // wage settlement now asks HOW the money was handed over: cash or online —
+  // and the amount is editable, so a partial month can settle part of the due
   const [payWage, setPayWage] = useState<{ id: string; name: string; ym: string; amount: number } | null>(null);
+  const [payAmt, setPayAmt] = useState(0);
+
+  // vendor settlement from this screen: enter any amount, oldest lots first
+  const [payVendorFor, setPayVendorFor] = useState<{ vendorId: string; name: string; due: number } | null>(null);
+  const [vendorAmt, setVendorAmt] = useState(0);
 
   const openLedger = (l: LedgerEntry) => {
     setEditLed(l);
@@ -59,16 +65,47 @@ export default function PaymentsPage({ state, setState }: Props) {
   };
 
   const payNow = (method: 'cash' | 'online') => {
-    if (!payWage || !(payWage.amount > 0)) return;
+    if (!payWage) return;
+    // clamp to what is still owed — one month can never be overpaid
+    const amt = Math.min(Math.max(0, payAmt), payWage.amount);
+    if (!(amt > 0)) return;
     setState({
       ...state,
       ledger: [...state.ledger, {
         id: 'led' + Date.now(), kind: 'out', bucket: 'wage', refId: payWage.id,
-        amount: payWage.amount, date: today(), ym: payWage.ym,
+        amount: amt, date: today(), ym: payWage.ym,
         note: `Wage settlement ${monthLabel(payWage.ym)} · ${method}`, method
       }]
     });
-    setPayWage(null);
+    setPayWage(null); setPayAmt(0);
+  };
+
+  /* vendor payment with an editable amount — the cash is split across this
+     vendor's open wood lots (oldest first), one ledger row per lot, so the
+     per-lot maths and every consistency check stay exact */
+  const recordVendorPayment = (method: 'cash' | 'online') => {
+    if (!payVendorFor) return;
+    let left = Math.min(Math.max(0, vendorAmt), payVendorFor.due);
+    if (!(left > 0)) return;
+    const openLots = state.woodLots
+      .filter(l => l.vendorId === payVendorFor.vendorId)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(l => ({ lot: l, rem: Math.max(0, D.lotValue(l) - D.paidToVendor(state, l.id)) }))
+      .filter(x => x.rem > 0);
+    const rows: LedgerEntry[] = [];
+    const stamp = Date.now();
+    for (const { lot, rem } of openLots) {
+      if (left <= 0) break;
+      const take = Math.min(rem, left);
+      rows.push({
+        id: `led${stamp}-${rows.length}`, kind: 'out', bucket: 'vendor', refId: lot.id,
+        vendorId: payVendorFor.vendorId, amount: take, date: today(),
+        note: `Wood payment · ${method}`, method
+      });
+      left -= take;
+    }
+    if (rows.length) setState({ ...state, ledger: [...state.ledger, ...rows] });
+    setPayVendorFor(null); setVendorAmt(0);
   };
 
   const deleteLedger = () => {
@@ -134,7 +171,17 @@ export default function PaymentsPage({ state, setState }: Props) {
               name={v.name}
               sub={`paid ₹${money(paid)} · balance ₹${money(due)}`}
               right={<span className={`font-black ${due > 0 ? 'text-red-600' : 'text-green-600'}`}>{due > 0 ? `₹${money(due)}` : '✓'}</span>}
-              action={<WhatsAppBtn phone={v.phone} message={vendorMessage(state, v.id)} label="Send" />}
+              action={
+                <div className="flex items-center gap-1.5">
+                  {due > 0 && (
+                    <button
+                      onClick={() => { setPayVendorFor({ vendorId: v.id, name: v.name, due }); setVendorAmt(due); }}
+                      className="py-2 px-3 bg-green-600 text-white rounded-xl text-[11px] font-black uppercase active:scale-95"
+                    >Pay</button>
+                  )}
+                  <WhatsAppBtn phone={v.phone} message={vendorMessage(state, v.id)} label="Send" />
+                </div>
+              }
             />
           );
         })}
@@ -171,7 +218,7 @@ export default function PaymentsPage({ state, setState }: Props) {
               action={
                 balance > 0 ? (
                   <button
-                    onClick={() => setPayWage({ id: w.id, name: w.name, ym, amount: balance })}
+                    onClick={() => { setPayWage({ id: w.id, name: w.name, ym, amount: balance }); setPayAmt(balance); }}
                     className="py-2 px-3 bg-blue-600 text-white rounded-xl text-[11px] font-black uppercase active:scale-95"
                   >Pay</button>
                 ) : <CheckCircle2 size={20} className="text-green-500" />
@@ -277,13 +324,23 @@ export default function PaymentsPage({ state, setState }: Props) {
         )}
       </Modal>
 
-      {/* Wage settlement — pick cash or online before it lands in the books */}
+      {/* Wage settlement — editable amount, then cash or online */}
       <Modal open={!!payWage} onClose={() => setPayWage(null)} title={payWage ? `Pay ${payWage.name}` : 'Pay'}>
         {payWage && (
-          <div className="text-center my-2 space-y-3">
-            <div className="text-xs font-black uppercase text-gray-400">{monthLabel(payWage.ym)}</div>
-            <div className="text-4xl font-black text-blue-600">₹ {money(payWage.amount)}</div>
-            <div className="text-xs font-bold text-gray-400">How did {payWage.name} take the money?</div>
+          <div className="my-2 space-y-3">
+            <div className="text-center">
+              <div className="text-xs font-black uppercase text-gray-400">{monthLabel(payWage.ym)}</div>
+              <div className="text-sm font-black text-blue-600 mt-1">Due ₹{money(payWage.amount)}</div>
+            </div>
+            <MoneyField label="Amount you are paying" value={payAmt} onChange={(v: number) => setPayAmt(v)} />
+            <div className="text-center text-[11px] font-bold text-gray-400">
+              {payAmt < payWage.amount
+                ? `Partial — leaves ₹${money(payWage.amount - payAmt)} due this month`
+                : payAmt > payWage.amount
+                  ? `More than due — ₹${money(payWage.amount)} will be recorded`
+                  : 'Full settlement of this month'}
+            </div>
+            <div className="text-xs font-bold text-gray-400 text-center">How did {payWage.name} take the money?</div>
             <div className="grid grid-cols-2 gap-3">
               <button onClick={() => payNow('cash')}
                 className="py-5 rounded-2xl bg-green-600 text-white font-black uppercase active:scale-95 flex flex-col items-center gap-1.5">
@@ -296,6 +353,38 @@ export default function PaymentsPage({ state, setState }: Props) {
             </div>
             <div className="text-[10px] font-bold text-gray-400">Recorded with today's date — shows in this member's history.</div>
             <button onClick={() => setPayWage(null)} className="w-full py-3 rounded-2xl bg-gray-100 font-black uppercase active:scale-95">Cancel</button>
+          </div>
+        )}
+      </Modal>
+
+      {/* Vendor settlement — pay any part of what you owe, oldest lots first */}
+      <Modal open={!!payVendorFor} onClose={() => setPayVendorFor(null)} title={payVendorFor ? `Pay ${payVendorFor.name}` : 'Pay vendor'}>
+        {payVendorFor && (
+          <div className="my-2 space-y-3">
+            <div className="text-center">
+              <div className="text-xs font-black uppercase text-gray-400">You owe</div>
+              <div className="text-3xl font-black text-red-600">₹ {money(payVendorFor.due)}</div>
+            </div>
+            <MoneyField label="Amount you are paying" value={vendorAmt} onChange={(v: number) => setVendorAmt(v)} />
+            <div className="text-center text-[11px] font-bold text-gray-400">
+              {vendorAmt < payVendorFor.due
+                ? `Partial — leaves ₹${money(payVendorFor.due - vendorAmt)} on credit`
+                : vendorAmt > payVendorFor.due
+                  ? `More than due — ₹${money(payVendorFor.due)} will be recorded`
+                  : 'Full settlement — balance clears to ✓'}
+            </div>
+            <div className="text-[10px] font-bold text-gray-400 text-center">Applied to the oldest wood lots first.</div>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => recordVendorPayment('cash')}
+                className="py-5 rounded-2xl bg-green-600 text-white font-black uppercase active:scale-95 flex flex-col items-center gap-1.5">
+                <Banknote size={26} /> Cash
+              </button>
+              <button onClick={() => recordVendorPayment('online')}
+                className="py-5 rounded-2xl bg-blue-600 text-white font-black uppercase active:scale-95 flex flex-col items-center gap-1.5">
+                <Landmark size={24} /> Online
+              </button>
+            </div>
+            <button onClick={() => setPayVendorFor(null)} className="w-full py-3 rounded-2xl bg-gray-100 font-black uppercase active:scale-95">Cancel</button>
           </div>
         )}
       </Modal>

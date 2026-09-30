@@ -166,8 +166,10 @@ const findPayRows = () => ev(() => {
     if (n(b.innerText).toLowerCase() !== 'pay') continue;
     const row = b.closest('.flex.items-center.gap-3');
     if (!row) continue;
+    const rn = n(row.innerText);
+    if (!rn.includes('= ₹')) continue; // wages only — vendor Pay rows carry "balance ₹" instead
     const nameEl = row.querySelector('.flex-1 > div');
-    out.push({ name: n(nameEl && nameEl.innerText), row: n(row.innerText) });
+    out.push({ name: n(nameEl && nameEl.innerText), row: rn });
   }
   return out;
 });
@@ -346,11 +348,17 @@ await step(5, 'money → mark worker present if needed → Pay → Cash → ledg
   if (!earned) throw new Error('could not parse earned amount from wage row: ' + JSON.stringify(beforeRow));
 
   const errMark = errors.length;
-  await ev(() => {
-    const b = [...document.querySelectorAll('button')].find(x => String(x.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase() === 'pay');
-    b && b.click();
-  });
-  await waitFor('Pay modal', async () => (await modalOpen()) && (await modalTitle()).startsWith('Pay '));
+  const openedWagePay = await ev(o => {
+    const n = t => String(t || '').replace(/\s+/g, ' ').trim();
+    for (const b of document.querySelectorAll('button')) {
+      if (n(b.innerText).toLowerCase() !== 'pay') continue;
+      const row = b.closest('.flex.items-center.gap-3');
+      if (row && n(row.innerText).includes(n(o.name))) { b.scrollIntoView({ block: 'center' }); b.click(); return true; }
+    }
+    return false;
+  }, { name: target.name });
+  if (!openedWagePay) throw new Error(`Pay button for ${target.name} not clickable`);
+  await waitFor('Pay modal', async () => (await modalOpen()) && (await modalTitle()).toLowerCase().startsWith('pay '));
   const title = await modalTitle();
   if (title.toLowerCase() !== `pay ${target.name}`.toLowerCase()) throw new Error(`modal title "${title}", expected "Pay ${target.name}"`);
   await clickBtn({ text: 'Cash', exact: true, scope: '.fixed.inset-0' });
@@ -524,6 +532,108 @@ await step(11, 'final state: master nav "more" → Settings', async () => {
   const t = await screenName();
   if (t !== 'Settings') throw new Error(`title is "${t}", expected "Settings"`);
   return 'app resting on Settings as master';
+});
+
+await step(12, 'partial wage: 2nd crew member pays half → balance stays due', async () => {
+  await go('team');
+  await waitFor('Team screen', async () => (await screenName()) === 'Team & Attendance');
+  const marked = await ev(() => {
+    const n = t => String(t || '').replace(/\s+/g, ' ').trim();
+    const grid = [...document.querySelectorAll('div.grid.grid-cols-3')][0];
+    // photo tiles are the buttons holding an <img> — the rate-edit and trash
+    // buttons sit beside them and must not be clicked
+    const tiles = grid ? [...grid.querySelectorAll('button')].filter(b => b.querySelector('img')) : [];
+    const btn = tiles[1];
+    if (!btn) return null;
+    btn.scrollIntoView({ block: 'center' });
+    btn.click();
+    return { name: n(btn.innerText), count: tiles.length };
+  });
+  if (!marked || !marked.name) throw new Error('2nd photo tile not found in the marking grid');
+  await sleep(450);
+  const green = await ev(() => {
+    const grid = [...document.querySelectorAll('div.grid.grid-cols-3')][0];
+    const tiles = grid ? [...grid.querySelectorAll('button')].filter(b => b.querySelector('img')) : [];
+    const b = tiles[1];
+    return b ? String(b.parentElement.className).includes('border-green-500') : null;
+  });
+  if (green !== true) throw new Error('2nd photo tile did not turn green — attendance was not marked');
+  await go('money');
+  await waitFor('Payments screen', async () => (await screenName()) === 'Payments');
+  const rows = await findPayRows();
+  const target = rows.find(r => r.name === marked.name);
+  if (!target) throw new Error(`no Pay row for ${marked.name} after marking; rows: ` + JSON.stringify(rows));
+  const total = Number(((target.row.match(/= ₹([\d,]+)/) || [])[1] || '0').replace(/,/g, ''));
+  if (!(total > 0)) throw new Error('could not parse earned total from row: ' + target.row);
+  const half = Math.max(1, Math.floor(total / 2));
+  const openedPay = await ev(o => {
+    const n = t => String(t || '').replace(/\s+/g, ' ').trim();
+    for (const b of document.querySelectorAll('button')) {
+      if (n(b.innerText).toLowerCase() !== 'pay') continue;
+      const row = b.closest('.flex.items-center.gap-3');
+      if (row && n(row.innerText).includes(n(o.name))) { b.scrollIntoView({ block: 'center' }); b.click(); return true; }
+    }
+    return false;
+  }, { name: target.name });
+  if (!openedPay) throw new Error(`Pay button for ${target.name} not clickable`);
+  await waitFor('wage pay modal', async () => (await modalOpen()) && (await modalTitle()).toLowerCase().startsWith('pay '));
+  const dueLine = (await modalText()).match(/Due ₹([\d,]+)/);
+  if (!dueLine || Number(dueLine[1].replace(/,/g, '')) !== total) {
+    throw new Error('modal "Due" line does not show the full earned total: ' + (await modalText()).slice(0, 200));
+  }
+  const set = await setNative('.fixed.inset-0 input[inputmode="numeric"]', String(half));
+  if (!set.ok) throw new Error('wage amount field not found in modal');
+  const hint = (await modalText()).toLowerCase();
+  if (!hint.includes('partial — leaves')) throw new Error('no partial-payment hint after editing the amount; modal: ' + hint.slice(0, 240));
+  await clickBtn({ text: 'Cash', exact: true, scope: '.fixed.inset-0' });
+  await waitFor('wage modal to close', async () => !(await modalOpen()));
+  await sleep(400);
+  const after = (await findPayRows()).find(r => r.name === target.name);
+  if (!after) throw new Error('Pay row vanished after a PARTIAL payment — it should stay until fully settled');
+  if (!after.row.includes(`paid ₹${half.toLocaleString('en-US')}`)) {
+    throw new Error(`row does not show paid ₹${half.toLocaleString('en-US')}: ` + after.row);
+  }
+  // the row text ends with the Pay action button — strip it to read the balance
+  const rowNoAction = after.row.replace(/\s+PAY$/, '');
+  const bal = (rowNoAction.match(/₹([\d,]+)$/) || [])[1];
+  const expectBal = (total - half).toLocaleString('en-US');
+  if (bal !== expectBal) throw new Error(`row balance ₹${bal}, expected ₹${expectBal}`);
+  return `${target.name} earned ₹${total.toLocaleString('en-US')} → paid ₹${half.toLocaleString('en-US')} → still due ₹${expectBal}, Pay button remains`;
+});
+
+await step(13, 'vendor: partial payment → rest stays on credit, ledger shows Wood payment', async () => {
+  const opened = await ev(() => {
+    const n = t => String(t || '').replace(/\s+/g, ' ').trim();
+    const card = [...document.querySelectorAll('div.bg-white')].find(d => n(d.innerText).toLowerCase().includes('money you owe'));
+    if (!card) return 'vendor card missing';
+    const b = [...card.querySelectorAll('button')].find(x => n(x.innerText).toLowerCase() === 'pay');
+    if (!b) return 'Pay button missing on vendor card';
+    b.scrollIntoView({ block: 'center' });
+    b.click();
+    return 'ok';
+  });
+  if (opened !== 'ok') throw new Error(opened);
+  await waitFor('vendor pay modal', async () => (await modalOpen()) && (await modalText()).toLowerCase().includes('you owe'));
+  const title = await modalTitle();
+  if (!/^pay /i.test(title)) throw new Error('unexpected modal title: ' + title);
+  const mt = await modalText();
+  const due = Number(((mt.match(/₹\s?([\d,]+)/) || [])[1] || '0').replace(/,/g, ''));
+  if (!(due > 0)) throw new Error('could not parse "You owe" total from modal: ' + mt.slice(0, 200));
+  const PAY = 100000;
+  if (due <= PAY) throw new Error(`demo due ₹${due} is not larger than the test payment`);
+  const set = await setNative('.fixed.inset-0 input[inputmode="numeric"]', String(PAY));
+  if (!set.ok) throw new Error('vendor amount field not found in modal');
+  const hint = (await modalText()).toLowerCase();
+  if (!hint.includes('partial — leaves')) throw new Error('no "on credit" partial hint; modal: ' + hint.slice(0, 240));
+  if (!hint.includes('oldest wood lots')) throw new Error('modal missing allocation note');
+  await clickBtn({ text: 'Cash', exact: true, scope: '.fixed.inset-0' });
+  await waitFor('vendor modal to close', async () => !(await modalOpen()));
+  await sleep(400);
+  const expectBal = (due - PAY).toLocaleString('en-US');
+  await waitFor(`vendor row balance ₹${expectBal}`, async () => (await bodyText()).includes(`balance ₹${expectBal}`));
+  const txt = await bodyText();
+  if (!txt.includes('Wood payment')) throw new Error('ledger has no "Wood payment" row after the settlement');
+  return `${title}: owed ₹${due.toLocaleString('en-US')} → paid ₹${PAY.toLocaleString('en-US')} → balance ₹${expectBal} on credit; ledger row "Wood payment" present`;
 });
 
 /* ───────────────────────────── report ───────────────────────────── */
