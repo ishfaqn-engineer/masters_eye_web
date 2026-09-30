@@ -7,6 +7,7 @@ import LoginGate from './components/LoginGate';
 import Dashboard from './pages/Dashboard';
 import VendorHome from './pages/VendorHome';
 import MyWork from './pages/MyWork';
+import ClientHome from './pages/ClientHome';
 import TeamPage from './pages/TeamPage';
 import ClientsPage from './pages/ClientsPage';
 import OrdersPage from './pages/OrdersPage';
@@ -19,6 +20,7 @@ const titles: Record<string, string> = {
   dashboard: "Master's Eye",
   vendorHome: 'My Supply',
   mywork: 'My Work',
+  clientHome: 'My Orders',
   team: 'Team & Attendance',
   clients: 'Clients',
   orders: 'Orders & Designs',
@@ -28,7 +30,7 @@ const titles: Record<string, string> = {
   settings: 'Settings'
 };
 
-type Role = 'master' | 'vendor' | 'team';
+type Role = 'master' | 'vendor' | 'team' | 'client';
 
 export default function App() {
   const [state, setStateRaw] = useState<AppState>(() => loadState());
@@ -64,8 +66,9 @@ export default function App() {
     master: ['dashboard', 'team', 'clients', 'orders', 'mill', 'payments', 'expenses', 'settings'],
     vendor: ['vendorHome', 'settings'],
     team: ['mywork', 'settings'],
+    client: ['clientHome', 'settings'],
   };
-  const home: Record<Role, string> = { master: 'dashboard', vendor: 'vendorHome', team: 'mywork' };
+  const home: Record<Role, string> = { master: 'dashboard', vendor: 'vendorHome', team: 'mywork', client: 'clientHome' };
   const current = allowed[role].includes(page) ? page : home[role];
   const go = (p: string) => setPage(allowed[role].includes(p) ? p : home[role]);
 
@@ -78,6 +81,7 @@ export default function App() {
     switch (current) {
       case 'vendorHome': return <VendorHome state={state} account={account!} />;
       case 'mywork': return <MyWork state={state} account={account!} />;
+      case 'clientHome': return <ClientHome state={state} setState={setState} account={account!} />;
       case 'team': return <TeamPage state={state} setState={setState} />;
       case 'clients': return <ClientsPage state={state} setState={setState} />;
       case 'orders': return <OrdersPage state={state} setState={setState} />;
@@ -97,6 +101,9 @@ export default function App() {
     { id: 'settings', icon: Cog, label: 'More' },
   ] : role === 'vendor' ? [
     { id: 'vendorHome', icon: Home, label: 'Home' },
+    { id: 'settings', icon: Cog, label: 'More' },
+  ] : role === 'client' ? [
+    { id: 'clientHome', icon: Home, label: 'Home' },
     { id: 'settings', icon: Cog, label: 'More' },
   ] : [
     { id: 'mywork', icon: Home, label: 'Home' },

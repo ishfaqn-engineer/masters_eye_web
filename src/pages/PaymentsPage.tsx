@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { IndianRupee, Wallet, CreditCard, Users, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight, Pencil, Trash2 } from 'lucide-react';
+import { IndianRupee, Wallet, CreditCard, Users, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight, Pencil, Trash2, Banknote, Landmark } from 'lucide-react';
 import { AppState, LedgerEntry, today, monthLabel, shiftMonth } from '../store';
 import * as D from '../lib/derive';
 import { money, ExportRow, StatCard, WhatsAppBtn, Modal, Field, inputCls, MoneyField } from '../components/ui';
@@ -37,11 +37,14 @@ export default function PaymentsPage({ state, setState }: Props) {
 
   // ledger row editing — every figure is derived, so fixing a row fixes the app
   const [editLed, setEditLed] = useState<LedgerEntry | null>(null);
-  const [ledDraft, setLedDraft] = useState({ amount: 0, date: today(), note: '' });
+  const [ledDraft, setLedDraft] = useState({ amount: 0, date: today(), note: '', method: '' as '' | 'cash' | 'online' });
+
+  // wage settlement now asks HOW the money was handed over: cash or online
+  const [payWage, setPayWage] = useState<{ id: string; name: string; ym: string; amount: number } | null>(null);
 
   const openLedger = (l: LedgerEntry) => {
     setEditLed(l);
-    setLedDraft({ amount: l.amount, date: l.date, note: l.note });
+    setLedDraft({ amount: l.amount, date: l.date, note: l.note, method: l.method || '' });
   };
 
   const saveLedger = () => {
@@ -49,10 +52,23 @@ export default function PaymentsPage({ state, setState }: Props) {
     setState({
       ...state,
       ledger: state.ledger.map(l => l.id === editLed.id
-        ? { ...l, amount: Math.max(0, ledDraft.amount), date: ledDraft.date || l.date, note: ledDraft.note }
+        ? { ...l, amount: Math.max(0, ledDraft.amount), date: ledDraft.date || l.date, note: ledDraft.note, method: ledDraft.method || undefined }
         : l)
     });
     setEditLed(null);
+  };
+
+  const payNow = (method: 'cash' | 'online') => {
+    if (!payWage || !(payWage.amount > 0)) return;
+    setState({
+      ...state,
+      ledger: [...state.ledger, {
+        id: 'led' + Date.now(), kind: 'out', bucket: 'wage', refId: payWage.id,
+        amount: payWage.amount, date: today(), ym: payWage.ym,
+        note: `Wage settlement ${monthLabel(payWage.ym)} · ${method}`, method
+      }]
+    });
+    setPayWage(null);
   };
 
   const deleteLedger = () => {
@@ -155,16 +171,7 @@ export default function PaymentsPage({ state, setState }: Props) {
               action={
                 balance > 0 ? (
                   <button
-                    onClick={() => {
-                      if (!confirm(`Pay Rs ${money(balance)} to ${w.name} for ${monthLabel(ym)}?`)) return;
-                      setState({
-                        ...state,
-                        ledger: [...state.ledger, {
-                          id: 'led' + Date.now(), kind: 'out', bucket: 'wage', refId: w.id,
-                          amount: balance, date: today(), ym, note: `Wage settlement ${monthLabel(ym)}`
-                        }]
-                      });
-                    }}
+                    onClick={() => setPayWage({ id: w.id, name: w.name, ym, amount: balance })}
                     className="py-2 px-3 bg-blue-600 text-white rounded-xl text-[11px] font-black uppercase active:scale-95"
                   >Pay</button>
                 ) : <CheckCircle2 size={20} className="text-green-500" />
@@ -212,7 +219,14 @@ export default function PaymentsPage({ state, setState }: Props) {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-sm capitalize truncate">{l.bucket} · {ref || '—'}</div>
-                <div className="text-[11px] text-gray-400 truncate">{l.date} · {l.note}</div>
+                <div className="text-[11px] text-gray-400 truncate flex items-center gap-1">
+                  <span className="truncate">{l.date} · {l.note}</span>
+                  {l.method && (
+                    <span className={`text-[9px] font-black uppercase px-1 rounded shrink-0 ${l.method === 'online' ? 'bg-blue-50 text-blue-500' : 'bg-green-50 text-green-600'}`}>
+                      {l.method}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className={`font-black shrink-0 ${l.kind === 'in' ? 'text-green-600' : 'text-red-600'}`}>
                 {l.kind === 'in' ? '+' : '−'}₹{money(l.amount)}
@@ -237,6 +251,17 @@ export default function PaymentsPage({ state, setState }: Props) {
             <Field label="Note">
               <input className={inputCls} value={ledDraft.note} onChange={e => setLedDraft({ ...ledDraft, note: e.target.value })} />
             </Field>
+            <div className="mb-3">
+              <span className="text-xs font-black uppercase text-gray-400 block mb-1">Payment method</span>
+              <div className="grid grid-cols-3 gap-2">
+                {([['', 'Not set'], ['cash', 'Cash'], ['online', 'Online']] as const).map(([v, lab]) => (
+                  <button key={lab} onClick={() => setLedDraft({ ...ledDraft, method: v })}
+                    className={`py-2.5 rounded-xl font-black uppercase text-xs active:scale-95 border-2 ${ledDraft.method === v ? 'bg-wood text-white border-wood' : 'bg-gray-50 border-gray-100 text-gray-500'}`}>
+                    {lab}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-3 mt-2">
               <button onClick={deleteLedger}
                 className="py-4 rounded-2xl bg-red-50 text-red-600 font-black uppercase active:scale-95 flex items-center justify-center gap-2">
@@ -249,6 +274,29 @@ export default function PaymentsPage({ state, setState }: Props) {
               Every figure in the app updates the moment you save.
             </div>
           </>
+        )}
+      </Modal>
+
+      {/* Wage settlement — pick cash or online before it lands in the books */}
+      <Modal open={!!payWage} onClose={() => setPayWage(null)} title={payWage ? `Pay ${payWage.name}` : 'Pay'}>
+        {payWage && (
+          <div className="text-center my-2 space-y-3">
+            <div className="text-xs font-black uppercase text-gray-400">{monthLabel(payWage.ym)}</div>
+            <div className="text-4xl font-black text-blue-600">₹ {money(payWage.amount)}</div>
+            <div className="text-xs font-bold text-gray-400">How did {payWage.name} take the money?</div>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => payNow('cash')}
+                className="py-5 rounded-2xl bg-green-600 text-white font-black uppercase active:scale-95 flex flex-col items-center gap-1.5">
+                <Banknote size={26} /> Cash
+              </button>
+              <button onClick={() => payNow('online')}
+                className="py-5 rounded-2xl bg-blue-600 text-white font-black uppercase active:scale-95 flex flex-col items-center gap-1.5">
+                <Landmark size={24} /> Online
+              </button>
+            </div>
+            <div className="text-[10px] font-bold text-gray-400">Recorded with today's date — shows in this member's history.</div>
+            <button onClick={() => setPayWage(null)} className="w-full py-3 rounded-2xl bg-gray-100 font-black uppercase active:scale-95">Cancel</button>
+          </div>
         )}
       </Modal>
     </div>

@@ -6,7 +6,7 @@ import { Field, inputCls } from './ui';
 
 type Props = { state: AppState; setState: (s: AppState) => void; onLogin: (accountId: string) => void };
 
-const roleLabel: Record<Role, string> = { master: 'Master', vendor: 'Vendor', team: 'Team member' };
+const roleLabel: Record<Role, string> = { master: 'Master', vendor: 'Vendor', team: 'Team member', client: 'Client' };
 
 /* First-run setup: create the master's PIN. Shown only when accounts is empty. */
 const SetupView = ({ state, setState, onLogin }: Props) => {
@@ -51,7 +51,7 @@ const SetupView = ({ state, setState, onLogin }: Props) => {
         </button>
       </div>
       <div className="text-[11px] font-bold opacity-50 mt-6 text-center max-w-xs">
-        You can add Vendor and Team logins later from Settings.
+        You can add Vendor, Team and Client logins later from Settings.
       </div>
       <Credit />
     </div>

@@ -4,7 +4,7 @@ import { AppState, Account, Role, blankState, normalizeState, Worker } from '../
 import { money, Modal, Field, inputCls, PhotoInput, MoneyField, StatCard, WhatsAppBtn } from '../components/ui';
 import { clearFiles } from '../lib/files';
 import { hashPin, makeAccount, verifyPin } from '../lib/auth';
-import { drivePush, drivePull, driveFileName, disconnectGoogle } from '../lib/drive';
+import { drivePush, drivePull, driveFileName, legacyDriveFileName, disconnectGoogle } from '../lib/drive';
 
 type Props = {
   state: AppState;
@@ -16,7 +16,7 @@ type Props = {
   onLogout: () => void;
 };
 
-const roleLabel: Record<Role, string> = { master: 'Master', vendor: 'Vendor', team: 'Team member' };
+const roleLabel: Record<Role, string> = { master: 'Master', vendor: 'Vendor', team: 'Team member', client: 'Client' };
 
 export default function SettingsPage({ state, setState, sync, syncing, account, role, onLogout }: Props) {
   const isMaster = role === 'master';
@@ -29,7 +29,8 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
 
   // accounts
   const [addOpen, setAddOpen] = useState(false);
-  const [accDraft, setAccDraft] = useState({ name: '', role: 'vendor' as Role, pin: '', vendorId: '', workerId: '' });
+  const [accDraft, setAccDraft] = useState({ name: '', role: 'vendor' as Role, pin: '', vendorId: '', workerId: '', clientId: '' });
+  const blankAccDraft = () => ({ name: '', role: 'vendor' as Role, pin: '', vendorId: '', workerId: '', clientId: '' });
 
   // drive
   const [gClientId, setGClientId] = useState(state.settings.googleClientId);
@@ -70,18 +71,22 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
     if (!/^\d{4,6}$/.test(accDraft.pin)) { alert('PIN must be 4 to 6 digits.'); return; }
     if (accDraft.role === 'vendor' && !accDraft.vendorId) { alert('Pick which vendor this login belongs to.'); return; }
     if (accDraft.role === 'team' && !accDraft.workerId) { alert('Pick which crew member this login belongs to.'); return; }
+    if (accDraft.role === 'client' && !accDraft.clientId) { alert('Pick which client this login belongs to.'); return; }
     const photo = accDraft.role === 'vendor'
       ? state.vendors.find(v => v.id === accDraft.vendorId)?.photo
-      : state.workers.find(w => w.id === accDraft.workerId)?.photo;
+      : accDraft.role === 'client'
+        ? state.clients.find(c => c.id === accDraft.clientId)?.photo
+        : state.workers.find(w => w.id === accDraft.workerId)?.photo;
     const acc = await makeAccount({
       name: accDraft.name.trim(), role: accDraft.role, pin: accDraft.pin,
       vendorId: accDraft.role === 'vendor' ? accDraft.vendorId : undefined,
       workerId: accDraft.role === 'team' ? accDraft.workerId : undefined,
+      clientId: accDraft.role === 'client' ? accDraft.clientId : undefined,
       photo,
     });
     setState({ ...state, accounts: [...state.accounts, acc] });
     setAddOpen(false);
-    setAccDraft({ name: '', role: 'vendor', pin: '', vendorId: '', workerId: '' });
+    setAccDraft(blankAccDraft());
   };
 
   const removeAccount = (acc: Account) => {
@@ -127,15 +132,26 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
   const doDrivePull = async () => {
     const cid = gClientId.trim() || state.settings.googleClientId;
     if (!cid) { alert('Enter your Google Client ID first (see help below).'); return; }
-    if (!confirm('Replace ALL current data with the copy in your Google Drive?')) return;
+    if (!confirm('Replace ALL current data with the SHARED copy from Google Drive?\n\nIf another device pushed newer records after this device\'s last backup, this device\'s newer changes will be lost.')) return;
     setDriveMsg('Downloading from Google…');
-    const res = await drivePull<any>(cid, driveFileName(account?.id || 'master'));
+    let res = await drivePull<any>(cid, driveFileName(account?.id || 'master'));
+    // shared copy missing → fall back to this account's pre-shared backup name
+    if (!res.ok && res.found === false && account?.id) {
+      const legacy = await drivePull<any>(cid, legacyDriveFileName(account.id));
+      if (legacy.found) {
+        res = legacy;
+        setDriveMsg('Found an older per-login backup — restoring it (next Backup writes the new shared copy).');
+      }
+    }
     if (res.ok && res.data) {
       // same guard as file restore — a wrong-version payload would brick the next boot
       if (res.data?.v !== 2) {
         setDriveMsg('✗ That Drive copy is not a Master\'s Eye v2 backup.');
       } else {
-        setState(normalizeState(res.data, blankState()));
+        const next = normalizeState(res.data, blankState());
+        // only the master may replace logins — a vendor / team / client pull must
+        // never rewrite the account list (auth hardening from 9529829)
+        setState(isMaster ? next : { ...next, accounts: state.accounts });
         setDriveMsg('✓ Restored from your Drive.');
       }
     } else {
@@ -264,7 +280,8 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
               </button>
             </div>
             <div className="text-xs text-gray-400 font-bold mb-3">
-              Master, Vendor and Team each log in with their own PIN and see their own menu. Logins keep working with no internet.
+              Master, Vendor, Team and Client each log in with their own PIN and see their own menu — all on the
+              same shared records, so an upload by a client shows up for the master. Logins keep working with no internet.
             </div>
             <div className="space-y-2">
               {!state.accounts.length && (
@@ -282,6 +299,7 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
                       {roleLabel[acc.role]}
                       {acc.role === 'vendor' && ` · ${state.vendors.find(v => v.id === acc.vendorId)?.name || 'unlinked'}`}
                       {acc.role === 'team' && ` · ${state.workers.find(w => w.id === acc.workerId)?.name || 'unlinked'}`}
+                      {acc.role === 'client' && ` · ${state.clients.find(c => c.id === acc.clientId)?.name || 'unlinked'}`}
                       {acc.id === account?.id ? ' · active' : ''}
                     </div>
                   </div>
@@ -294,28 +312,26 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
         </>
       )}
 
-      {/* ── Google Drive (all roles — each account its own copy) ── */}
+      {/* ── Google Drive (all roles — ONE shared copy keeps master / client / team integrated) ── */}
       <div className="bg-white rounded-3xl shadow p-4">
         <div className="flex items-center gap-2 font-black uppercase text-sm mb-1">
           <Cloud size={16} className="text-blue-600" /> Google Drive
         </div>
         <div className="text-xs text-gray-400 font-bold mb-3">
-          Sign in with Google and this login's backup goes to <b>your own Drive</b> — master, vendor and team each keep their own copy.
+          Every login reads and writes <b>one shared copy</b> — upload a design as the client, Restore as the
+          master, and the order is there. Device A pushes, device B pulls, same records both sides.
         </div>
         <Field label="Google OAuth Client ID (one-time setup)">
           <input className={inputCls + ' text-sm'} value={gClientId} onChange={e => setGClientId(e.target.value)}
             placeholder="xxxx.apps.googleusercontent.com" />
         </Field>
-        {/* restore is master-only: a crafted backup would replace every login */}
-        <div className={`grid gap-3 ${isMaster ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <div className="grid grid-cols-2 gap-3">
           <button onClick={doDrivePush} className="py-3 rounded-2xl bg-blue-600 text-white font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2">
             <Cloud size={16} /> Backup to Drive
           </button>
-          {isMaster && (
-            <button onClick={doDrivePull} className="py-3 rounded-2xl bg-gray-100 font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2">
-              <Upload size={16} /> Restore from Drive
-            </button>
-          )}
+          <button onClick={doDrivePull} className="py-3 rounded-2xl bg-gray-100 font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2">
+            <Upload size={16} /> Restore from Drive
+          </button>
         </div>
         <div className="grid grid-cols-2 gap-3 mt-2">
           <button onClick={saveClientId} className="py-3 rounded-2xl bg-wood/10 text-wood font-black uppercase text-xs active:scale-95">Save ID</button>
@@ -418,11 +434,11 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
         </Field>
         <div className="mb-3">
           <span className="text-xs font-black uppercase text-gray-400 block mb-1">Role</span>
-          <div className="grid grid-cols-2 gap-2">
-            {(['vendor', 'team'] as Role[]).map(r => (
+          <div className="grid grid-cols-3 gap-2">
+            {(['vendor', 'team', 'client'] as Role[]).map(r => (
               <button key={r} onClick={() => setAccDraft({ ...accDraft, role: r })}
                 className={`py-3 rounded-2xl font-black uppercase text-xs active:scale-95 border-2 ${accDraft.role === r ? 'bg-wood text-white border-wood' : 'bg-gray-50 border-gray-100 text-gray-500'}`}>
-                {r === 'vendor' ? 'Vendor' : 'Team member'}
+                {r === 'vendor' ? 'Vendor' : r === 'team' ? 'Team' : 'Client'}
               </button>
             ))}
           </div>
@@ -440,6 +456,14 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
             <select className={inputCls} value={accDraft.workerId} onChange={e => setAccDraft({ ...accDraft, workerId: e.target.value })}>
               <option value="">— select —</option>
               {state.workers.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+          </Field>
+        )}
+        {accDraft.role === 'client' && (
+          <Field label="Linked client">
+            <select className={inputCls} value={accDraft.clientId} onChange={e => setAccDraft({ ...accDraft, clientId: e.target.value })}>
+              <option value="">— select —</option>
+              {state.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </Field>
         )}

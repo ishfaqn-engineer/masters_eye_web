@@ -156,6 +156,44 @@ export const PhotoInput = ({ value, onChange, round = true, size = 'w-32 h-32' }
   </div>
 );
 
+/* multi-image design picker — stores down-scaled data-URLs inside state, so a
+   client's design uploads travel with Drive sync and file backup (IndexedDB
+   attachments would stay stuck on the device that uploaded them) */
+export const DesignPicker = ({ values, onChange, max = 12, label = 'Add design photo' }: {
+  values: string[]; onChange: (v: string[]) => void; max?: number; label?: string;
+}) => (
+  <div className="flex flex-wrap gap-2">
+    {values.map((v, i) => v ? (
+      <div key={i} className="relative w-16 h-16">
+        <img src={v} className="w-full h-full object-cover rounded-xl border-2 border-gray-200" alt="" />
+        <button
+          type="button"
+          onClick={() => onChange(values.filter((_, j) => j !== i))}
+          title="Remove design"
+          className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-1 shadow active:scale-90"
+        >
+          <X size={11} />
+        </button>
+      </div>
+    ) : null)}
+    {values.length < max && (
+      <label title={label} className="w-16 h-16 rounded-xl border-4 border-dashed border-orange-300 bg-orange-50 flex items-center justify-center text-orange-500 cursor-pointer active:scale-95">
+        <ImageIcon size={20} />
+        <input type="file" accept="image/*" className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (!f) return;
+            readPhoto(f, v => {
+              if (v) onChange([...values, v]);
+              else alert('That image could not be read. Try another photo.');
+            });
+          }} />
+      </label>
+    )}
+  </div>
+);
+
 /* attachment chips with thumbnail / pdf badge */
 export const AttachmentList = ({ ids, onRemove }: { ids: string[]; onRemove?: (id: string) => void }) => {
   const [items, setItems] = useState<Record<string, { url: string | null; pdf: boolean; name: string }>>({});

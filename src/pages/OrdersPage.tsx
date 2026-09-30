@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Plus, DoorOpen, PanelsTopLeft, FileSpreadsheet, Wallet, Ruler } from 'lucide-react';
-import { AppState, OrderItem, OrderStatus } from '../store';
+import { AppState, OrderItem, OrderStatus, OrderSpecs, seedSpecs, specsToFlat, orderHeadline } from '../store';
 import { money, Modal, Field, inputCls, MoneyField, ExportRow, EditBtn, DeleteBtn, FileDrop, AttachmentList, StatCard } from '../components/ui';
+import { SpecEditor, SpecSummary } from '../components/SpecEditor';
 import { exportOrdersExcel, exportOrdersPdf } from '../lib/exporters';
 import { clientMessage, openWhatsApp } from '../lib/whatsapp';
 import { removeFile } from '../lib/files';
@@ -10,12 +11,13 @@ import * as D from '../lib/derive';
 type Props = { state: AppState; setState: (s: AppState) => void };
 
 const STAGES: OrderStatus[] = ['pending', 'cutting', 'polish', 'installed', 'delivered'];
-const KINDS = ['door', 'window', 'other'] as const;
 const WOODS = ['Teak', 'Sheesham', 'Oak', 'Pine', 'Walnut'];
 
+const blankSpecs = () => seedSpecs({ kind: 'door', qty: 1, widthIn: 36, heightIn: 84 });
 const blank = (clientId: string) => ({
   clientId, kind: 'door' as const, qty: 1, widthIn: 36, heightIn: 84,
-  woodType: 'Teak', price: 0, status: 'pending' as OrderStatus, notes: '', files: [] as string[]
+  woodType: 'Teak', price: 0, status: 'pending' as OrderStatus, notes: '', files: [] as string[],
+  specs: blankSpecs() as OrderSpecs
 });
 
 export default function OrdersPage({ state, setState }: Props) {
@@ -26,15 +28,25 @@ export default function OrdersPage({ state, setState }: Props) {
   const formOpen = React.useRef(false);
 
   const openAdd = () => { formOpen.current = true; setDraft(blank(state.clients[0]?.id || '')); setEditing(null); setAdding(true); };
-  const openEdit = (o: OrderItem) => { formOpen.current = true; setDraft({ ...o, files: [...(o.files ?? [])].filter(Boolean) }); setEditing(o); setAdding(true); };
+  const openEdit = (o: OrderItem) => {
+    formOpen.current = true;
+    setDraft({ ...o, files: [...(o.files ?? [])].filter(Boolean), specs: o.specs ?? seedSpecs(o) });
+    setEditing(o); setAdding(true);
+  };
 
   const save = () => {
     if (!draft.clientId) { alert('Add a client first'); return; }
+    const specs: OrderSpecs = draft.specs ?? blankSpecs();
+    // the spec sheet is the source of truth now — the flat fields feed exports
+    const hasLines = specs.doors.length + specs.windows.length + specs.others.length > 0;
+    const flat = hasLines ? specsToFlat(specs) : {
+      kind: draft.kind, qty: Math.max(1, Number(draft.qty) || 1),
+      widthIn: Math.max(1, Number(draft.widthIn) || 1), heightIn: Math.max(1, Number(draft.heightIn) || 1)
+    };
     const clean = {
       ...draft,
-      qty: Math.max(1, Number(draft.qty) || 1),
-      widthIn: Math.max(1, Number(draft.widthIn) || 1),
-      heightIn: Math.max(1, Number(draft.heightIn) || 1),
+      ...flat,
+      specs,
       price: Math.max(0, Number(draft.price) || 0),
       files: (draft.files || []).filter((f: string) => !!f)
     };
@@ -105,15 +117,16 @@ export default function OrdersPage({ state, setState }: Props) {
           const c = clientOf(o.clientId);
           const Icon = o.kind === 'door' ? DoorOpen : o.kind === 'window' ? PanelsTopLeft : Ruler;
           const stageIdx = STAGES.indexOf(o.status);
+          const hl = orderHeadline(o);
           return (
             <div key={o.id} className="bg-white rounded-3xl shadow p-4 border-l-8 border-orange-500">
               <div className="flex items-start gap-3">
                 <div className="bg-orange-100 p-3 rounded-xl"><Icon size={26} className="text-orange-600" /></div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-black uppercase">{o.qty}× {o.kind}</span>
-                    <span className="text-[10px] font-black bg-gray-100 px-2 py-1 rounded">{o.widthIn}"×{o.heightIn}"</span>
-                    <span className="text-[10px] font-black bg-wood/10 text-wood px-2 py-1 rounded">{o.woodType}</span>
+                    <span className="font-black uppercase">{hl.qty}× {hl.kind}</span>
+                    <span className="text-[10px] font-black bg-gray-100 px-2 py-1 rounded">{hl.sizes}</span>
+                    {o.woodType && <span className="text-[10px] font-black bg-wood/10 text-wood px-2 py-1 rounded">{o.woodType}</span>}
                   </div>
                   <div className="text-xs font-bold text-gray-400 mt-0.5 flex items-center gap-1">
                     {c?.photo && <img src={c.photo} className="w-4 h-4 rounded-full object-cover" />}
@@ -129,7 +142,10 @@ export default function OrdersPage({ state, setState }: Props) {
 
               {o.notes && <div className="text-xs font-bold text-gray-500 mt-2 bg-gray-50 p-2 rounded-xl">{o.notes}</div>}
 
-              {/* designs / photos */}
+              {/* structured doors / windows / others + uploaded designs */}
+              <SpecSummary specs={o.specs} />
+
+              {/* designs / photos (IndexedDB attachments: PDFs & extras) */}
               <AttachmentList ids={(o.files ?? []).filter(Boolean)} />
 
               {/* stage slider */}
@@ -174,22 +190,11 @@ export default function OrdersPage({ state, setState }: Props) {
             {state.clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </Field>
-        <Field label="Type">
-          <div className="grid grid-cols-3 gap-2">
-            {KINDS.map(k => (
-              <button key={k} onClick={() => setDraft({ ...draft, kind: k })}
-                className={`py-3 rounded-xl font-black uppercase text-sm ${draft.kind === k ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-500'}`}>{k}</button>
-            ))}
-          </div>
-        </Field>
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="Qty"><input className={inputCls} type="number" value={draft.qty} onChange={e => setDraft({ ...draft, qty: e.target.value === '' ? '' : +e.target.value })} /></Field>
-          <Field label='Width"'><input className={inputCls} type="number" value={draft.widthIn} onChange={e => setDraft({ ...draft, widthIn: e.target.value === '' ? '' : +e.target.value })} /></Field>
-          <Field label='Height"'><input className={inputCls} type="number" value={draft.heightIn} onChange={e => setDraft({ ...draft, heightIn: e.target.value === '' ? '' : +e.target.value })} /></Field>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
+        <SpecEditor specs={draft.specs || blankSpecs()} onChange={(s: OrderSpecs) => setDraft((d: any) => ({ ...d, specs: s }))} />
+        <div className="grid grid-cols-2 gap-3 mt-3">
           <Field label="Wood">
             <select className={inputCls} value={draft.woodType} onChange={e => setDraft({ ...draft, woodType: e.target.value })}>
+              {!draft.woodType && <option value="">— pick wood —</option>}
               {WOODS.map(t => <option key={t} value={t}>{t}</option>)}
               {draft.woodType && !WOODS.includes(draft.woodType) && <option value={draft.woodType}>{draft.woodType}</option>}
             </select>
@@ -204,8 +209,8 @@ export default function OrdersPage({ state, setState }: Props) {
         <Field label="Notes (designer instructions, client demands)">
           <textarea className={inputCls} rows={2} value={draft.notes} onChange={e => setDraft({ ...draft, notes: e.target.value })} />
         </Field>
-        <Field label="Designs / photos (visible to your whole team)">
-          <FileDrop onAdd={addFile} label="Upload design photo or PDF" />
+        <Field label="Extra files (PDF plans, receipts — stored on this device)">
+          <FileDrop onAdd={addFile} label="Upload PDF or photo file" />
         </Field>
         <AttachmentList ids={(draft.files || []).filter(Boolean)} onRemove={dropFile} />
 

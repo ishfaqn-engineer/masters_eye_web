@@ -248,6 +248,94 @@ async function testInputs() {
   await go('home');
 }
 
+// ── client role: create a client login, log in as them, audit their home ──
+async function testClient() {
+  cur = 'client';
+  await go('more');
+  const opened = await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')].find(x => (x.innerText || '').trim().toLowerCase() === 'add');
+    if (!b) return false; b.click(); return true;
+  });
+  await sleep(350);
+  if (!opened) { problems.push({ screen: 'client', text: 'ADD LOGIN', reasons: ['button missing'] }); return; }
+
+  // pick the Client role
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.fixed.inset-0 button')].find(x => (x.innerText || '').trim().toLowerCase() === 'client');
+    b && b.click();
+  });
+  await sleep(250);
+  // name via native setter (React controlled input)
+  await page.evaluate(() => {
+    const i = [...document.querySelectorAll('.fixed.inset-0 input')].find(x => x.type === 'text');
+    if (!i) return;
+    const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    set.call(i, 'Rashid');
+    i.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  // linked client = first client in the select
+  const selOk = await page.evaluate(() => {
+    const s = document.querySelector('.fixed.inset-0 select');
+    if (!s || s.options.length < 2) return false;
+    s.value = s.options[1].value;
+    s.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  });
+  if (!selOk) problems.push({ screen: 'client', text: 'LINKED CLIENT', reasons: ['client select missing'] });
+  const pw = await page.$('.fixed.inset-0 input[type="password"]');
+  if (pw) await pw.type('6789', { delay: 10 });
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.fixed.inset-0 button')].find(x => (x.innerText || '').trim().toLowerCase() === 'create');
+    b && b.click();
+  });
+  await sleep(450);
+  const created = await page.evaluate(() =>
+    !![...document.querySelectorAll('button')].find(x => (x.innerText || '').toLowerCase().includes('log out')));
+  if (!created) { problems.push({ screen: 'client', text: 'CREATE CLIENT LOGIN', reasons: ['stayed in modal or account missing'] }); return; }
+
+  // log out of master
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')].find(x => (x.innerText || '').toLowerCase().includes('log out'));
+    b && b.click();
+  });
+  await sleep(450);
+  // pick the client account (role label contains "Client") and PIN in
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')].find(x => (x.innerText || '').toLowerCase().includes('client') && x.querySelector('img'));
+    b && b.click();
+  });
+  await sleep(350);
+  const cpw = await page.$('input[type="password"]');
+  if (cpw) { await cpw.type('6789', { delay: 10 }); await page.keyboard.press('Enter'); await sleep(600); }
+  const scr = await screenName();
+  console.log('[client] screen after client PIN:', scr);
+  if (scr !== 'My Orders') {
+    problems.push({ screen: 'client', text: 'CLIENT LOGIN', reasons: ['expected "My Orders", got "' + scr + '"'] });
+    return;
+  }
+  await auditScreen('client:home');
+  // client settings screen
+  await go('more');
+  if ((await screenName()) !== 'Settings') problems.push({ screen: 'client', text: 'CLIENT SETTINGS', reasons: ['nav More failed'] });
+  await auditScreen('client:settings');
+  // log back in as master so the remaining phases run with full access
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')].find(x => (x.innerText || '').toLowerCase().includes('log out'));
+    b && b.click();
+  });
+  await sleep(450);
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')].find(x => x.querySelector('img') && x.querySelector('svg'));
+    b && b.click();
+  });
+  await sleep(350);
+  const mpw = await page.$('input[type="password"]');
+  if (mpw) { await mpw.type('1234', { delay: 10 }); await page.keyboard.press('Enter'); await sleep(600); }
+  const back = await screenName();
+  console.log('[client] back to master:', back);
+  if (back !== "Master's Eye") problems.push({ screen: 'client', text: 'BACK TO MASTER', reasons: ['got "' + back + '"'] });
+}
+
 // ── auth: change PIN, log out, old PIN rejected, new PIN gets back in ──
 async function testAuth() {
   cur = 'auth';
@@ -332,6 +420,7 @@ await phase('dashboard', () => auditScreen('dashboard'));
 for (const n of ['clients', 'team', 'money', 'more']) { await go(n); await phase('nav:' + n, () => auditScreen('nav:' + n)); }
 await phase('header', testHeader);
 await phase('inputs', testInputs);
+await phase('client', testClient);
 
 // tiles -> orders / mill / expenses
 await go('home');

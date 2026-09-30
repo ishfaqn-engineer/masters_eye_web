@@ -33,6 +33,26 @@ export type WoodLot = {
 
 export type OrderStatus = 'pending' | 'cutting' | 'polish' | 'installed' | 'delivered';
 
+/** one row of the order spec sheet — e.g. "6× Main door 36×84, 4 cft wood" */
+export type SpecLine = {
+  id: ID;
+  label: string;
+  qty: number;
+  widthIn: number;
+  heightIn: number;
+  woodCft: number; // wood required for this whole line (qty included)
+};
+
+/** structured order details: doors, windows of different sizes, named "other"
+    categories — plus the client's uploaded design images (data-URLs, so they
+    travel with Drive sync and file backup) */
+export type OrderSpecs = {
+  doors: SpecLine[];
+  windows: SpecLine[];
+  others: SpecLine[];
+  designs: string[];
+};
+
 export type OrderItem = {
   id: ID;
   clientId: ID;
@@ -45,7 +65,73 @@ export type OrderItem = {
   status: OrderStatus;
   notes: string;
   files: ID[]; // attachment ids in IndexedDB (images + pdf)
+  /** structured doors/windows/others breakdown — added in v2.1 */
+  specs?: OrderSpecs;
 };
+
+export const allSpecLines = (specs?: OrderSpecs): SpecLine[] =>
+  specs ? [...specs.doors, ...specs.windows, ...specs.others] : [];
+
+export const specWoodTotal = (specs?: OrderSpecs): number =>
+  allSpecLines(specs).reduce((a, l) => a + (Number(l.woodCft) || 0), 0);
+
+/** collapse the spec sheet into the legacy flat fields (exports + card header) */
+export function specsToFlat(specs: OrderSpecs): { kind: 'door' | 'window' | 'other'; qty: number; widthIn: number; heightIn: number } {
+  const first = specs.doors[0] || specs.windows[0] || specs.others[0];
+  return {
+    kind: specs.doors.length ? 'door' : specs.windows.length ? 'window' : 'other',
+    qty: Math.max(1, allSpecLines(specs).reduce((a, l) => a + (Number(l.qty) || 0), 0)),
+    widthIn: Math.max(1, Number(first?.widthIn) || 36),
+    heightIn: Math.max(1, Number(first?.heightIn) || 84),
+  };
+}
+
+export type OrderLine = { label: string; qty: number; widthIn: number; heightIn: number };
+
+/**
+ * one display row per spec line — cards, Excel, PDF and WhatsApp all read the
+ * sheet instead of the collapsed flat fields, so a 3-door + 2-window order
+ * never shows up as "5× door, 36×84".
+ * Orders saved before v2.1 (no specs) keep their single legacy row.
+ */
+export function orderLines(o: Pick<OrderItem, 'kind' | 'qty' | 'widthIn' | 'heightIn' | 'specs'>): OrderLine[] {
+  const s = o.specs;
+  const sec = (ls: SpecLine[], fallback: string): OrderLine[] => ls.map(l => ({
+    label: l.label || fallback,
+    qty: Math.max(1, Number(l.qty) || 1),
+    widthIn: Number(l.widthIn) || o.widthIn,
+    heightIn: Number(l.heightIn) || o.heightIn,
+  }));
+  if (s && (s.doors.length || s.windows.length || s.others.length)) {
+    return [...sec(s.doors, 'Door'), ...sec(s.windows, 'Window'), ...sec(s.others, 'Item')];
+  }
+  return [{ label: o.kind, qty: Math.max(1, o.qty || 1), widthIn: o.widthIn, heightIn: o.heightIn }];
+}
+
+/** card header: total pieces + item kinds + distinct sizes (max 2 shown, then "+n") */
+export function orderHeadline(o: Pick<OrderItem, 'kind' | 'qty' | 'widthIn' | 'heightIn' | 'specs'>): { qty: number; kind: string; sizes: string } {
+  const s = o.specs;
+  const hasSpecs = !!s && (s.doors.length || s.windows.length || s.others.length);
+  if (!hasSpecs) return { qty: Math.max(1, o.qty || 1), kind: o.kind, sizes: `${o.widthIn}"×${o.heightIn}"` };
+  const lines = orderLines(o);
+  const kinds: string[] = [];
+  if (s!.doors.length) kinds.push(s!.doors.length === 1 ? 'door' : 'doors');
+  if (s!.windows.length) kinds.push(s!.windows.length === 1 ? 'window' : 'windows');
+  if (s!.others.length) kinds.push(s!.others.length === 1 ? 'item' : 'items');
+  const sizes = [...new Set(lines.map(l => `${l.widthIn}"×${l.heightIn}"`))];
+  return {
+    qty: lines.reduce((a, l) => a + l.qty, 0),
+    kind: kinds.join('+'),
+    sizes: sizes.slice(0, 2).join(', ') + (sizes.length > 2 ? ` +${sizes.length - 2}` : ''),
+  };
+}
+
+/** give a legacy order (or a brand-new blank) a starting spec sheet */
+export function seedSpecs(o: Pick<OrderItem, 'kind' | 'qty' | 'widthIn' | 'heightIn'>): OrderSpecs {
+  const label = o.kind === 'door' ? 'Door' : o.kind === 'window' ? 'Window' : 'Item';
+  const line: SpecLine = { id: 'sl' + Date.now() + Math.random().toString(36).slice(2, 5), label, qty: Math.max(1, o.qty || 1), widthIn: o.widthIn || 36, heightIn: o.heightIn || 84, woodCft: 0 };
+  return { doors: o.kind === 'door' ? [line] : [], windows: o.kind === 'window' ? [line] : [], others: o.kind === 'other' ? [line] : [], designs: [] };
+}
 
 export type Expense = {
   id: ID;
@@ -71,6 +157,8 @@ export type LedgerEntry = {
   orphaned?: boolean;
   /** vendor rows keep their vendor even after the wood lot is deleted */
   vendorId?: string;
+  /** how a payment was handed over: cash in hand or online transfer */
+  method?: 'cash' | 'online';
 };
 
 export type Settings = {
@@ -83,7 +171,7 @@ export type Settings = {
   googleClientId: string;
 };
 
-export type Role = 'master' | 'vendor' | 'team';
+export type Role = 'master' | 'vendor' | 'team' | 'client';
 
 export type Account = {
   id: ID;
@@ -95,6 +183,8 @@ export type Account = {
   vendorId?: ID;
   /** for role 'team': which worker this login represents */
   workerId?: ID;
+  /** for role 'client': which client this login represents */
+  clientId?: ID;
   photo?: string;
 };
 
@@ -171,9 +261,18 @@ export function emptyState(): AppState {
       { id: 'l3', type: 'Oak', cubicFeet: 85, ratePerCubicFeet: 1900, vendorId: 'v1', photo: '', date: t },
     ],
     orders: [
-      { id: 'o1', clientId: 'c1', kind: 'door', qty: 6, widthIn: 36, heightIn: 84, woodType: 'Teak', price: 48000, status: 'cutting', notes: '', files: [] },
-      { id: 'o2', clientId: 'c1', kind: 'window', qty: 4, widthIn: 48, heightIn: 60, woodType: 'Sheesham', price: 24000, status: 'pending', notes: '', files: [] },
-      { id: 'o3', clientId: 'c2', kind: 'door', qty: 2, widthIn: 32, heightIn: 80, woodType: 'Oak', price: 18000, status: 'polish', notes: '', files: [] },
+      {
+        id: 'o1', clientId: 'c1', kind: 'door', qty: 6, widthIn: 36, heightIn: 84, woodType: 'Teak', price: 48000, status: 'cutting', notes: '', files: [],
+        specs: { doors: [{ id: 'sl1', label: 'Main door', qty: 6, widthIn: 36, heightIn: 84, woodCft: 9 }], windows: [], others: [], designs: [] }
+      },
+      {
+        id: 'o2', clientId: 'c1', kind: 'window', qty: 4, widthIn: 48, heightIn: 60, woodType: 'Sheesham', price: 24000, status: 'pending', notes: '', files: [],
+        specs: { doors: [], windows: [{ id: 'sl2', label: 'Sliding window', qty: 4, widthIn: 48, heightIn: 60, woodCft: 4.5 }], others: [], designs: [] }
+      },
+      {
+        id: 'o3', clientId: 'c2', kind: 'door', qty: 2, widthIn: 32, heightIn: 80, woodType: 'Oak', price: 18000, status: 'polish', notes: '', files: [],
+        specs: { doors: [{ id: 'sl3', label: 'Kitchen door', qty: 2, widthIn: 32, heightIn: 80, woodCft: 2.5 }], windows: [], others: [], designs: [] }
+      },
     ],
     expenses: [
       { id: 'e1', label: 'Sanding belts', amount: 2500, category: 'consumable', recurring: 'monthly', date: t, photo: '' },
@@ -209,6 +308,33 @@ export function normalizeState(parsed: any, base: AppState = emptyState()): AppS
         .filter((l: any) => l && typeof l.id === 'string' && Number.isFinite(Number(l.amount)))
         .map((l: any) => ({ ...l, amount: Number(l.amount) }))
     : [];
+  // orders: keep only rows with real ids; coerce a malformed spec sheet instead
+  // of letting one bad line crash the Orders and Clients screens
+  const fixLines = (a: any): SpecLine[] => Array.isArray(a)
+    ? a.filter((l: any) => l && typeof l === 'object')
+        .map((l: any, i: number) => ({
+          id: typeof l.id === 'string' ? l.id : 'sl' + i + Math.random().toString(36).slice(2, 6),
+          label: typeof l.label === 'string' ? l.label : '',
+          qty: Math.max(0, Number(l.qty) || 0),
+          widthIn: Math.max(0, Number(l.widthIn) || 0),
+          heightIn: Math.max(0, Number(l.heightIn) || 0),
+          woodCft: Math.max(0, Number(l.woodCft) || 0),
+        }))
+    : [];
+  const fixSpecs = (o: any): OrderSpecs | undefined => {
+    if (!o?.specs || typeof o.specs !== 'object') return undefined;
+    return {
+      doors: fixLines(o.specs.doors),
+      windows: fixLines(o.specs.windows),
+      others: fixLines(o.specs.others),
+      designs: Array.isArray(o.specs.designs) ? o.specs.designs.filter((d: any) => typeof d === 'string' && d) : [],
+    };
+  };
+  const orders = Array.isArray(parsed?.orders)
+    ? parsed.orders
+        .filter((o: any) => o && typeof o.id === 'string' && typeof o.clientId === 'string')
+        .map((o: any) => ({ ...o, files: Array.isArray(o.files) ? o.files : [], specs: fixSpecs(o) }))
+    : [];
   return {
     ...base,
     ...parsed,
@@ -220,9 +346,9 @@ export function normalizeState(parsed: any, base: AppState = emptyState()): AppS
     clients: Array.isArray(parsed?.clients) ? parsed.clients : [],
     vendors: Array.isArray(parsed?.vendors) ? parsed.vendors : [],
     woodLots: Array.isArray(parsed?.woodLots) ? parsed.woodLots : [],
-    orders: Array.isArray(parsed?.orders) ? parsed.orders : [],
     expenses: Array.isArray(parsed?.expenses) ? parsed.expenses : [],
     ledger,
+    orders,
   } as AppState;
 }
 
@@ -281,7 +407,10 @@ export function saveState(s: AppState) {
       if (o && typeof o === 'object') {
         const c: any = Array.isArray(o) ? [] : {};
         for (const [k, v] of Object.entries(o)) {
-          c[k] = typeof v === 'string' && v.startsWith('data:') && k.toLowerCase().includes('photo') ? '' : walk(v);
+          const heavy = k === 'designs' || k.toLowerCase().includes('photo');
+          if (heavy && typeof v === 'string' && v.startsWith('data:')) c[k] = '';
+          else if (heavy && Array.isArray(v)) c[k] = v.filter((x: any) => !(typeof x === 'string' && x.startsWith('data:')));
+          else c[k] = walk(v);
         }
         return c;
       }
@@ -293,13 +422,13 @@ export function saveState(s: AppState) {
   try {
     localStorage.setItem(KEY, JSON.stringify(s));
   } catch {
-    // last resort: drop only the biggest photo strings so history, money and
-    // attendance still survive. In-memory state is untouched, but tell the owner.
+    // last resort: drop only the biggest photo & design strings so history,
+    // money and attendance still survive. In-memory state is untouched, but tell the owner.
     try {
       localStorage.setItem(KEY, JSON.stringify(slimPhotos(s)));
       if (!warnedPhotoStrip) {
         warnedPhotoStrip = true;
-        alert('Phone storage is full. Old photos were skipped so your records stay safe — use Backup now to save everything to a file.');
+        alert('Phone storage is full. Old photos and design images were skipped so your records stay safe — use Backup now to save everything to a file.');
       }
     } catch {
       if (!warnedStorageBlock) {

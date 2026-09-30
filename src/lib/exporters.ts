@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { AppState, monthLabel, monthKey, daysInMonth, today } from '../store';
+import { AppState, monthLabel, monthKey, daysInMonth, today, orderLines } from '../store';
 import * as D from './derive';
 import { saveBlob } from './native';
 
@@ -296,15 +296,20 @@ export function exportPaymentsPdf(s: AppState, ym: string = today().slice(0, 7))
 /* ---------- Orders ---------- */
 
 export function exportOrdersExcel(s: AppState) {
+  /* one row per spec line — price lands on the order's first row only so the
+     column can still be summed without double counting */
   const rows: (string | number)[][] = [
     ['ORDERS REPORT'],
     ['Generated', new Date().toLocaleString()],
     [],
-    ['Client', 'Type', 'Qty', 'Width"', 'Height"', 'Wood', 'Price', 'Status', 'Notes'],
-    ...s.orders.map(o => [
-      s.clients.find(c => c.id === o.clientId)?.name || '—',
-      o.kind, o.qty, o.widthIn, o.heightIn, o.woodType, o.price, o.status, o.notes
-    ]),
+    ['Client', 'Item', 'Qty', 'Width"', 'Height"', 'Wood', 'Price', 'Status', 'Notes'],
+    ...s.orders.flatMap(o => {
+      const client = s.clients.find(c => c.id === o.clientId)?.name || '—';
+      return orderLines(o).map((l, i) => [
+        client, l.label, l.qty, l.widthIn, l.heightIn, o.woodType,
+        i === 0 ? o.price : '', o.status, o.notes
+      ]);
+    }),
     [],
     ['Total Order Value', s.orders.reduce((a, o) => a + o.price, 0)],
   ];
@@ -314,15 +319,18 @@ export function exportOrdersExcel(s: AppState) {
 export function exportOrdersPdf(s: AppState) {
   exportPdf('Orders Report', `Generated ${new Date().toLocaleString()}`,
     ['Client', 'Item', 'Qty', 'Size', 'Wood', 'Price', 'Status'],
-    s.orders.map(o => [
-      s.clients.find(c => c.id === o.clientId)?.name || '—',
-      `${o.qty}x ${o.kind}`,
-      o.qty,
-      `${o.widthIn}x${o.heightIn}"`,
-      o.woodType,
-      cur(o.price),
-      o.status,
-    ]),
+    s.orders.flatMap(o => {
+      const client = s.clients.find(c => c.id === o.clientId)?.name || '—';
+      return orderLines(o).map((l, i) => [
+        client,
+        `${l.qty}x ${l.label}`,
+        l.qty,
+        `${l.widthIn}x${l.heightIn}"`,
+        o.woodType,
+        i === 0 ? cur(o.price) : '',
+        o.status,
+      ]);
+    }),
     'orders-report',
     `Total: ${cur(s.orders.reduce((a, o) => a + o.price, 0))}`
   );

@@ -1,4 +1,4 @@
-import { AppState, monthLabel } from '../store';
+import { AppState, monthLabel, orderLines } from '../store';
 import * as D from './derive';
 
 const sanitize = (n: string) => n.replace(/\D/g, '');
@@ -46,7 +46,12 @@ export function clientMessage(s: AppState, clientId: string) {
     : `You have paid Rs ${Math.abs(due)} ahead`;
   return `Assalam-o-Alaikum ${c.name},\n\n` +
     `Your order update:\n` +
-    orders.map(o => `• ${o.qty}x ${o.kind} (${o.widthIn}"x${o.heightIn}", ${o.woodType}) — ${o.status}`).join('\n') +
+    orders.map(o => {
+      const lines = orderLines(o);
+      const dims = lines.slice(0, 3).map(l => `${l.qty}x ${l.label} ${l.widthIn}"x${l.heightIn}"`).join(', ')
+        + (lines.length > 3 ? ` +${lines.length - 3} more` : '');
+      return `• ${dims} (${o.woodType}) — ${o.status}`;
+    }).join('\n') +
     `\n\nOrder value: Rs ${D.clientTotal(s, c)}\nReceived: Rs ${D.clientPaid(s, c)}\n${balanceLine}\n\n` +
     `— ${s.settings.masterName}, Joinery Mill`;
 }

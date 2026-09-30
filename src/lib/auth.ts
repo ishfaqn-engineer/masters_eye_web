@@ -28,6 +28,7 @@ export async function makeAccount(input: {
   pin: string;
   vendorId?: string;
   workerId?: string;
+  clientId?: string;
   photo?: string;
 }): Promise<Account> {
   const id = `${input.role}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -38,6 +39,7 @@ export async function makeAccount(input: {
     pinHash: await hashPin(input.pin, id),
     vendorId: input.vendorId,
     workerId: input.workerId,
+    clientId: input.clientId,
     photo: input.photo,
   };
 }

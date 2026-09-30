@@ -1,20 +1,30 @@
 import React, { useState } from 'react';
 import { Camera, Wallet, Phone, IndianRupee, CheckCircle2, Package } from 'lucide-react';
-import { AppState, Client, today } from '../store';
+import { AppState, Client, today, OrderStatus, orderHeadline } from '../store';
 import * as D from '../lib/derive';
 import { removeFile } from '../lib/files';
 import { money, Modal, Field, inputCls, PhotoInput, MoneyField, WhatsAppBtn, EditBtn, DeleteBtn, StatCard } from '../components/ui';
+import { SpecSummary } from '../components/SpecEditor';
 import { clientMessage } from '../lib/whatsapp';
 
 type Props = { state: AppState; setState: (s: AppState) => void };
 
 const blank = () => ({ name: '', photo: '', phone: '', notes: '', advancePaid: 0, totalOrderValue: 0 });
 
+const stageChip: Record<OrderStatus, string> = {
+  pending: 'bg-gray-100 text-gray-500',
+  cutting: 'bg-orange-100 text-orange-600',
+  polish: 'bg-blue-100 text-blue-600',
+  installed: 'bg-purple-100 text-purple-600',
+  delivered: 'bg-green-100 text-green-600',
+};
+
 export default function ClientsPage({ state, setState }: Props) {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
   const [draft, setDraft] = useState<any>(blank());
   const [payFor, setPayFor] = useState<Client | null>(null);
+  const [ordersFor, setOrdersFor] = useState<Client | null>(null);
   const [amount, setAmount] = useState(0);
   const [note, setNote] = useState('');
 
@@ -129,9 +139,11 @@ export default function ClientsPage({ state, setState }: Props) {
                   <span className="flex items-center gap-1 text-green-600"><IndianRupee size={11} />{money(paid)}</span>
                   <span>/ ₹{money(total)}</span>
                 </div>
-                <div className="text-[10px] font-black text-gray-400 text-center flex items-center justify-center gap-1">
-                  <Package size={11} /> {orders} orders
-                </div>
+                <button onClick={() => setOrdersFor(c)}
+                  title="Open this client's orders & designs"
+                  className="w-full text-[10px] font-black text-gray-500 bg-gray-50 hover:bg-gray-100 py-1.5 rounded-lg active:scale-95 flex items-center justify-center gap-1">
+                  <Package size={11} /> {orders} {orders === 1 ? 'order' : 'orders'} — open
+                </button>
                 <button onClick={() => { setPayFor(c); setAmount(0); setNote(''); }}
                   disabled={rawDue <= 0}
                   className={`w-full py-2.5 rounded-xl font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-1 ${rawDue > 0 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-400'}`}>
@@ -205,6 +217,32 @@ export default function ClientsPage({ state, setState }: Props) {
           <Wallet size={20} /> Confirm Cash Received
         </button>
         <div className="text-[10px] text-gray-400 font-bold text-center mt-2">Every rupee you enter lands in Payments automatically.</div>
+      </Modal>
+
+      {/* Client's orders & uploaded designs — what the client sends shows up here */}
+      <Modal open={!!ordersFor} onClose={() => setOrdersFor(null)} title={ordersFor ? `${ordersFor.name} — orders` : 'Orders'}>
+        {ordersFor && (
+          <div className="space-y-3">
+            {state.orders.filter(o => o.clientId === ordersFor.id).length === 0 && (
+              <div className="text-center text-gray-300 font-bold py-6 text-xs">No orders for this client yet</div>
+            )}
+            {state.orders.filter(o => o.clientId === ordersFor.id).map(o => {
+              const hl = orderHeadline(o);
+              return (
+                <div key={o.id} className="border-2 border-gray-100 rounded-2xl p-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-black uppercase text-sm">{hl.qty}× {hl.kind}</span>
+                    <span className={`text-[10px] font-black px-2 py-1 rounded uppercase ${stageChip[o.status]}`}>{o.status}</span>
+                    {o.price > 0 && <span className="text-[10px] font-black text-green-600">₹{money(o.price)}</span>}
+                    {o.woodType && <span className="text-[10px] font-black bg-wood/10 text-wood px-2 py-1 rounded">{o.woodType}</span>}
+                  </div>
+                  <SpecSummary specs={o.specs} />
+                  {o.notes && <div className="text-xs font-bold text-gray-500 mt-2 bg-gray-50 p-2 rounded-xl">{o.notes}</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Modal>
     </div>
   );

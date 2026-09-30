@@ -149,5 +149,11 @@ export async function drivePull<T>(clientId: string, fileName: string): Promise<
   }
 }
 
-/* one filename per account so master / vendor / team each own their Drive copy */
-export const driveFileName = (accountId: string) => `masters-eye-${accountId}.json`;
+/* ONE filename for every login — master, vendor, team and client all read and
+   write the same copy, so their views stay integrated across devices.
+   (kept accepting an account id so older call sites still compile) */
+export const driveFileName = (_accountId?: string) => 'masters-eye-shared.json';
+
+/* pre-shared-file backups were one per account — keep the old naming reachable
+   so a pull can still find a backup made before the shared-copy change */
+export const legacyDriveFileName = (accountId: string) => `masters-eye-${accountId}.json`;
