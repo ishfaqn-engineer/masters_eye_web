@@ -5,6 +5,7 @@
    - Tests header back/cog, bottom nav, label file-inputs and selects explicitly.
    A control is reported dead ONLY if clicking it changes nothing at all. */
 import puppeteer from 'puppeteer-core';
+import { demoSeed } from './fixtures.mjs';
 
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const URL = 'http://localhost:5173/';
@@ -35,6 +36,7 @@ page.on('dialog', async d => {
 let lastDialog = '';
 
 // instrument popups + downloads BEFORE navigation
+await page.evaluateOnNewDocument(demoSeed);
 await page.evaluateOnNewDocument(() => {
   window.__popup = false; window.__download = false;
   const oo = window.open;

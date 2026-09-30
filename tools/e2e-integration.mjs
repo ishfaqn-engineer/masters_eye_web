@@ -8,6 +8,7 @@ import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { demoSeed } from './fixtures.mjs';
 
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const URL = 'http://localhost:5173/';
@@ -30,6 +31,7 @@ const browser = await puppeteer.launch({
   defaultViewport: { width: 430, height: 900 },
 });
 const page = await browser.newPage();
+await page.evaluateOnNewDocument(demoSeed);
 await page.evaluateOnNewDocument(() => {
   const add = () => {
     if (!document.documentElement) return;
