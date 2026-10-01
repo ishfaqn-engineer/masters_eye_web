@@ -15,6 +15,7 @@ import MillPage from './pages/MillPage';
 import PaymentsPage from './pages/PaymentsPage';
 import ExpensesPage from './pages/ExpensesPage';
 import SettingsPage from './pages/SettingsPage';
+import Assistant from './components/Assistant';
 
 const titles: Record<string, string> = {
   dashboard: "Master's Eye",
@@ -133,6 +134,7 @@ export default function App() {
         }
       />
       {body()}
+      {role === 'master' && <Assistant state={state} setState={setState} />}
       <div className="fixed bottom-0 inset-x-0 max-w-md mx-auto bg-white border-t border-gray-200 px-6 py-3 flex justify-between items-center shadow-2xl z-40">
         {nav.map(n => (
           <button key={n.id} onClick={() => go(n.id)}

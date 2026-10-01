@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MessageCircle, Trash2, RefreshCw, Phone, Pencil, Upload, Users, HardDrive, Info, LogOut, KeyRound, Cloud, Plus, ShieldCheck } from 'lucide-react';
+import { MessageCircle, Trash2, RefreshCw, Phone, Pencil, Upload, Users, HardDrive, Info, LogOut, KeyRound, Cloud, Plus, ShieldCheck, Sparkles } from 'lucide-react';
 import { AppState, Account, Role, blankState, normalizeState, Worker } from '../store';
 import { money, Modal, Field, inputCls, PhotoInput, MoneyField, StatCard, WhatsAppBtn } from '../components/ui';
 import { clearFiles } from '../lib/files';
@@ -35,6 +35,24 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
   // drive
   const [gClientId, setGClientId] = useState(state.settings.googleClientId);
   const [driveMsg, setDriveMsg] = useState('');
+
+  // kashmiri assistant (master)
+  const [aiKey, setAiKey] = useState(state.settings.aiKey);
+  const [aiModel, setAiModel] = useState(state.settings.aiModel);
+  const [aiBase, setAiBase] = useState(state.settings.aiBaseUrl);
+  const [aiMsg, setAiMsg] = useState('');
+  const saveAi = () => {
+    setState({
+      ...state,
+      settings: {
+        ...state.settings,
+        aiKey: aiKey.trim(),
+        aiModel: aiModel.trim() || 'gemma4:31b',
+        aiBaseUrl: aiBase.trim() || 'https://ollama.com/api',
+      },
+    });
+    setAiMsg(aiKey.trim() ? '✓ Saved — assistant ab khula bol sakta hai.' : '✓ Key hata di — ab sirf offline commands chalenge.');
+  };
 
   useEffect(() => { setWa(state.settings.whatsappNumber); }, [state.settings.whatsappNumber]);
 
@@ -266,6 +284,32 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
               <button onClick={saveWa} className="py-3 rounded-2xl bg-green-600 text-white font-black uppercase active:scale-95">Save</button>
               <WhatsAppBtn phone={wa} message="Test — The Master's Eye is connected." label="Test" />
             </div>
+          </div>
+
+          {/* ── Kashmiri assistant (master) ─────── */}
+          <div className="bg-white rounded-3xl shadow p-4">
+            <div className="flex items-center gap-2 font-black uppercase text-sm mb-1">
+              <Sparkles size={16} className="text-wood" /> Kashmiri voice assistant
+            </div>
+            <div className="text-xs text-gray-400 font-bold mb-3">
+              Sparkle button (bottom-right) se bol dein — <b>"Zaid aaj gair-haazir"</b>, <b>"client ne 5000 dyut"</b>,
+              <b> "cash kinna hai"</b>. Basic commands <b>offline</b> chalte hain; AI key daalo to aazad Kashmiri /
+              Urdu / English sab samajh lega (Gemma via Ollama — internet chahiye).
+            </div>
+            <Field label="AI API key (ollama.com → Settings → API keys)">
+              <input className={inputCls + ' text-sm'} type="password" value={aiKey} onChange={e => setAiKey(e.target.value)}
+                placeholder="paste your ollama key (sirf is device par rehta hai)" autoComplete="off" />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Model">
+                <input className={inputCls + ' text-sm'} value={aiModel} onChange={e => setAiModel(e.target.value)} placeholder="gemma4:31b" />
+              </Field>
+              <Field label="Endpoint">
+                <input className={inputCls + ' text-sm'} value={aiBase} onChange={e => setAiBase(e.target.value)} placeholder="https://ollama.com/api" />
+              </Field>
+            </div>
+            <button onClick={saveAi} className="w-full py-3 rounded-2xl bg-wood text-white font-black uppercase active:scale-95">Save assistant</button>
+            {aiMsg && <div className="text-xs font-black mt-2 text-center text-gray-600">{aiMsg}</div>}
           </div>
 
           {/* ── Accounts & login ───────────────── */}

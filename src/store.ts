@@ -169,6 +169,12 @@ export type Settings = {
   currency: string;
   /** OAuth client id from Google Cloud Console — enables Drive sync (optional) */
   googleClientId: string;
+  /** Ollama (or any OpenAI-style) chat endpoint for the Kashmiri assistant (optional) */
+  aiBaseUrl: string;
+  /** API key for aiBaseUrl — stays on this device, travels with Drive backup */
+  aiKey: string;
+  /** chat model id, e.g. gemma4:31b */
+  aiModel: string;
 };
 
 export type Role = 'master' | 'vendor' | 'team' | 'client';
@@ -238,7 +244,10 @@ export function emptyState(): AppState {
       masterRate: 2000,
       whatsappNumber: '',
       currency: 'Rs',
-      googleClientId: ''
+      googleClientId: '',
+      aiBaseUrl: 'https://ollama.com/api',
+      aiKey: '',
+      aiModel: 'gemma4:31b'
     },
     accounts: [],
     workers: [
@@ -383,7 +392,10 @@ export function blankState(): AppState {
       masterRate: 0,
       whatsappNumber: '',
       currency: 'Rs',
-      googleClientId: ''
+      googleClientId: '',
+      aiBaseUrl: 'https://ollama.com/api',
+      aiKey: '',
+      aiModel: 'gemma4:31b'
     },
     accounts: [],
     workers: [],

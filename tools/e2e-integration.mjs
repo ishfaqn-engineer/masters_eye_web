@@ -636,6 +636,77 @@ await step(13, 'vendor: partial payment → rest stays on credit, ledger shows W
   return `${title}: owed ₹${due.toLocaleString('en-US')} → paid ₹${PAY.toLocaleString('en-US')} → balance ₹${expectBal} on credit; ledger row "Wood payment" present`;
 });
 
+await step(14, 'assistant: offline kashmiri rules — mark attendance + cash query', async () => {
+  const openAssistant = async () => {
+    await clickBtn({ text: 'Kashmiri assistant' });
+    await waitFor('assistant overlay', async () => (await modalOpen()) && (await modalText()).includes('Boliye'));
+  };
+  const say = async (text) => {
+    const set = await setNative('.fixed.inset-0 input[placeholder^="Likhein"]', text);
+    if (!set.ok) throw new Error('assistant input not found (found ' + set.found + ')');
+    await clickBtn({ text: 'Send', exact: true, scope: '.fixed.inset-0' });
+  };
+  const todaysPresent = () => ev(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem('masters-eye-v2') || '{}');
+      const d0 = new Date();
+      const t = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
+      const day = (s.attendance || []).find(a => a.date === t);
+      return (day && day.presentIds) || [];
+    } catch { return null; }
+  });
+
+  await openAssistant();
+
+  // rules path (no key needed): present — Zaid was NOT marked in earlier steps
+  await say('Zaid aaj haazir hai');
+  await waitFor('assistant reply for Zaid', async () => (await modalText()).includes('Zaid — aaj haazir'), 9000);
+  let ids = await todaysPresent();
+  if (!ids || !ids.includes('w3')) throw new Error('Zaid (w3) not added to today\'s attendance by the assistant; presentIds=' + JSON.stringify(ids));
+
+  // rules path: absent — Khan WAS marked present in step 12, so this must flip him off
+  await say('Khan aaj gair-haazir hai');
+  await waitFor('assistant reply for Khan', async () => (await modalText()).includes('Khan — aaj gair-haazir'), 9000);
+  ids = await todaysPresent();
+  if (ids.includes('w2')) throw new Error('Khan (w2) still present after "gair-haazir"; presentIds=' + JSON.stringify(ids));
+  if (!ids.includes('w1')) throw new Error('Ali (w1) was wiped from attendance — only Khan should flip; presentIds=' + JSON.stringify(ids));
+
+  // query via the suggestion chip — read-only, must answer with the cash figure
+  await clickBtn({ text: 'Cash kinna', scope: '.fixed.inset-0' });
+  await clickBtn({ text: 'Send', exact: true, scope: '.fixed.inset-0' });
+  // demo cash can be negative — accept the minus sign
+  await waitFor('cash reply', async () => /Hand.yth cash: ₹-?[\d,]+/.test(await modalText()), 9000);
+  const cash = (await modalText()).match(/Hand.yth cash: (₹-?[\d,]+)/);
+
+  await clickBtn({ text: 'Close assistant' });
+  await waitFor('assistant closed', async () => !(await modalOpen()));
+  return `rules marked Zaid haazir + Khan gair-haazir (attendance flipped in storage), cash query answered ${cash ? cash[1] : '?'}`;
+});
+
+if (process.env.OLLAMA_KEY) {
+  await step(15, 'assistant: free-form kashmiri via gemma (ollama cloud)', async () => {
+    // the key comes from the environment at run time — never from the repo
+    await ev(k => {
+      const SK = 'masters-eye-v2';
+      const s = JSON.parse(localStorage.getItem(SK));
+      s.settings = { ...s.settings, aiKey: k, aiModel: s.settings.aiModel || 'gemma4:31b', aiBaseUrl: s.settings.aiBaseUrl || 'https://ollama.com/api' };
+      localStorage.setItem(SK, JSON.stringify(s));
+    }, process.env.OLLAMA_KEY);
+    await page.reload({ waitUntil: 'load' });
+    await sleep(900);
+    await clickBtn({ text: 'Kashmiri assistant' });
+    await waitFor('assistant overlay', async () => (await modalOpen()) && (await modalText()).includes('Boliye'));
+    // no digits anywhere → parseRules returns null → the brain must catch it
+    await setNative('.fixed.inset-0 input[placeholder^="Likhein"]', 'paanch sau rupay zaid ki tankhwah de dena');
+    await clickBtn({ text: 'Send', exact: true, scope: '.fixed.inset-0' });
+    await waitFor('gemma reply naming Zaid + 500', async () => {
+      const t = await modalText();
+      return t.includes('Zaid') && t.includes('500');
+    }, 60000);
+    return '"paanch sau rupay … tankhwah" has no parseable digits — Gemma resolved it to a Zaid wage payment of 500';
+  });
+}
+
 /* ───────────────────────────── report ───────────────────────────── */
 console.log('\n=== STEP RESULTS ===');
 for (const r of results) console.log(`STEP ${r.n} ${r.ok ? 'PASS' : 'FAIL'} — ${r.name}${r.ok ? '' : '\n        ' + r.detail}`);
