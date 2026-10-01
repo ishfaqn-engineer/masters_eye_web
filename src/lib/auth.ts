@@ -19,7 +19,10 @@ export async function hashPin(pin: string, salt: string): Promise<string> {
 
 export async function verifyPin(account: Account, pin: string): Promise<boolean> {
   if (!pin) return false;
-  return (await hashPin(pin, account.id)) === account.pinHash;
+  if ((await hashPin(pin, account.id)) === account.pinHash) return true;
+  // server-registered accounts hash the password against the username
+  if (account.username && (await hashPin(pin, account.username)) === account.pinHash) return true;
+  return false;
 }
 
 export async function makeAccount(input: {

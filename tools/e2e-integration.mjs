@@ -637,81 +637,10 @@ await step(13, 'vendor: partial payment → rest stays on credit, ledger shows W
   return `${title}: owed ₹${due.toLocaleString('en-US')} → paid ₹${PAY.toLocaleString('en-US')} → balance ₹${expectBal} on credit; ledger row "Wood payment" present`;
 });
 
-await step(14, 'assistant: offline kashmiri rules — mark attendance + cash query', async () => {
-  const openAssistant = async () => {
-    await clickBtn({ text: 'Kashmiri assistant' });
-    await waitFor('assistant overlay', async () => (await modalOpen()) && (await modalText()).includes('Boliye'));
-  };
-  const say = async (text) => {
-    const set = await setNative('.fixed.inset-0 input[placeholder^="Likhein"]', text);
-    if (!set.ok) throw new Error('assistant input not found (found ' + set.found + ')');
-    await clickBtn({ text: 'Send', exact: true, scope: '.fixed.inset-0' });
-  };
-  const todaysPresent = () => ev(() => {
-    try {
-      const s = JSON.parse(localStorage.getItem('masters-eye-v2') || '{}');
-      const d0 = new Date();
-      const t = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
-      const day = (s.attendance || []).find(a => a.date === t);
-      return (day && day.presentIds) || [];
-    } catch { return null; }
-  });
-
-  await openAssistant();
-
-  // rules path (no key needed): present — Zaid was NOT marked in earlier steps
-  await say('Zaid aaj haazir hai');
-  await waitFor('assistant reply for Zaid', async () => (await modalText()).includes('Zaid — aaj haazir'), 9000);
-  let ids = await todaysPresent();
-  if (!ids || !ids.includes('w3')) throw new Error('Zaid (w3) not added to today\'s attendance by the assistant; presentIds=' + JSON.stringify(ids));
-
-  // rules path: absent — Khan WAS marked present in step 12, so this must flip him off
-  await say('Khan aaj gair-haazir hai');
-  await waitFor('assistant reply for Khan', async () => (await modalText()).includes('Khan — aaj gair-haazir'), 9000);
-  ids = await todaysPresent();
-  if (ids.includes('w2')) throw new Error('Khan (w2) still present after "gair-haazir"; presentIds=' + JSON.stringify(ids));
-  if (!ids.includes('w1')) throw new Error('Ali (w1) was wiped from attendance — only Khan should flip; presentIds=' + JSON.stringify(ids));
-
-  // query via the suggestion chip — read-only, must answer with the cash figure
-  await clickBtn({ text: 'Cash kinna', scope: '.fixed.inset-0' });
-  await clickBtn({ text: 'Send', exact: true, scope: '.fixed.inset-0' });
-  // demo cash can be negative — accept the minus sign
-  await waitFor('cash reply', async () => /Hand.yth cash: ₹-?[\d,]+/.test(await modalText()), 9000);
-  const cash = (await modalText()).match(/Hand.yth cash: (₹-?[\d,]+)/);
-
-  await clickBtn({ text: 'Close assistant' });
-  await waitFor('assistant closed', async () => !(await modalOpen()));
-  return `rules marked Zaid haazir + Khan gair-haazir (attendance flipped in storage), cash query answered ${cash ? cash[1] : '?'}`;
-});
-
-if (process.env.OLLAMA_KEY) {
-  await step(15, 'assistant: free-form kashmiri via gemma (ollama cloud)', async () => {
-    // the key comes from the environment at run time — never from the repo
-    await ev(k => {
-      const SK = 'masters-eye-v2';
-      const s = JSON.parse(localStorage.getItem(SK));
-      s.settings = { ...s.settings, aiKey: k, aiModel: s.settings.aiModel || 'gemma4:31b', aiBaseUrl: s.settings.aiBaseUrl || 'https://ollama.com/api' };
-      localStorage.setItem(SK, JSON.stringify(s));
-    }, process.env.OLLAMA_KEY);
-    await page.reload({ waitUntil: 'load' });
-    await sleep(900);
-    await clickBtn({ text: 'Kashmiri assistant' });
-    await waitFor('assistant overlay', async () => (await modalOpen()) && (await modalText()).includes('Boliye'));
-    // no digits anywhere → parseRules returns null → the brain must catch it
-    await setNative('.fixed.inset-0 input[placeholder^="Likhein"]', 'paanch sau rupay zaid ki tankhwah de dena');
-    await clickBtn({ text: 'Send', exact: true, scope: '.fixed.inset-0' });
-    await waitFor('gemma reply naming Zaid + 500', async () => {
-      const t = await modalText();
-      return t.includes('Zaid') && t.includes('500');
-    }, 60000);
-    return '"paanch sau rupay … tankhwah" has no parseable digits — Gemma resolved it to a Zaid wage payment of 500';
-  });
-}
-
-/* ── step 16: quotes — estimate → WhatsApp → one-tap order ───────────────
-   Fresh reload first so the assistant overlay from step 15 can't sit on top
-   of the Orders screen. window.open is stubbed to record wa.me URLs. */
-await step(16, 'quotes: new estimate → wa.me → accept converts it to an order', async () => {
+/* ── step 14: quotes — estimate → WhatsApp → one-tap order ───────────────
+   Fresh reload first so nothing from the previous step lingers on top of
+   the Orders screen. window.open is stubbed to record wa.me URLs. */
+await step(14, 'quotes: new estimate → wa.me → accept converts it to an order', async () => {
   await page.reload({ waitUntil: 'load' });
   await sleep(900);
   await go('home');
@@ -762,8 +691,8 @@ await step(16, 'quotes: new estimate → wa.me → accept converts it to an orde
   return `2×Rs500 quote → wa.me/923001234567 (Main door set, Rs 1000) → Accept stamped orderId, order card ₹1,000`;
 });
 
-/* ── step 17: dashboard analytics + one-tap dues reminders ─────────────── */
-await step(17, 'dashboard: month P/L, 6-month trend, remind-dues card', async () => {
+/* ── step 15: dashboard analytics + one-tap dues reminders ─────────────── */
+await step(15, 'dashboard: month P/L, 6-month trend, remind-dues card', async () => {
   await go('home');
   await waitFor('dashboard', async () => (await screenName()) === "Master's Eye");
 
@@ -829,8 +758,8 @@ await step(17, 'dashboard: month P/L, 6-month trend, remind-dues card', async ()
   return `P/L ${exp.mIn}/${exp.mOut}/${exp.mProfit} + stock ${exp.stock} verified; Remind → wa.me carries ${exp.clientName} Rs ${exp.clientDue}`;
 });
 
-/* ── step 18: low-stock alert (mutate a lot, reload, alert must fire) ──── */
-await step(18, 'dashboard: dry lot triggers the low-stock alert', async () => {
+/* ── step 16: low-stock alert (mutate a lot, reload, alert must fire) ──── */
+await step(16, 'dashboard: dry lot triggers the low-stock alert', async () => {
   if ((await bodyText()).toLowerCase().includes('low stock')) throw new Error('alert already showing before mutation');
   await ev(() => {
     const SK = 'masters-eye-v2';
@@ -846,58 +775,76 @@ await step(18, 'dashboard: dry lot triggers the low-stock alert', async () => {
   return 'l3 (Oak) cut to 3 ft³ → amber alert appears and names it';
 });
 
-/* ── step 19: the reinstall path ───────────────────────────────────────────
-   Wipe both localStorage keys (what deleting the app does), boot to the
-   blank first-run screen, then restore from a MOCKED Google Drive: GIS stub
-   + Drive REST fixtures. The restored payload carries its own accounts, so
-   the old master PIN must open the app again with the data intact. */
-await step(19, 'reinstall: wipe app → Drive restore (mocked) → old logins + data back', async () => {
-  const accId = 'accRestored1';
-  // must match hashPin(): SHA-256(`${salt}:${pin}`)
-  const pinHash = crypto.createHash('sha256').update(`${accId}:1234`).digest('hex');
-  const backup = {
-    v: 2,
-    settings: {
-      masterName: 'Restored Master', masterPhoto: '', masterRate: 1500,
-      whatsappNumber: '', currency: 'Rs',
-      googleClientId: 'test-id.apps.googleusercontent.com',
-    },
-    accounts: [{ id: accId, name: 'Restored Master', role: 'master', pinHash, photo: '' }],
-    workers: [{ id: 'rw1', name: 'Restored Worker', photo: '', rate: 999 }],
-    ledger: [{ id: 'led-restored', kind: 'in', bucket: 'capital', refId: 'master', amount: 12345, note: 'restored marker', date: '2026-01-01' }],
-  };
-
-  const GIS_STUB =
-    'window.google={accounts:{oauth2:{' +
-    'initTokenClient:(cfg)=>({requestAccessToken:()=>setTimeout(()=>cfg.callback({access_token:"fake-token",expires_in:3600}),25)}),' +
-    'revoke:()=>{}}}};';
-
-  // real Drive responses carry CORS headers — puppeteer's respond() does not
-  // add them, so cross-origin fetch() from the app would be blocked without these
+/* ── step 17: cloud server + dev console (mocked Apps Script) ────────────
+   The server is the owner's own Apps Script /exec URL. Here it is mocked
+   with request interception (CORS headers on respond(), incl. OPTIONS) —
+   same pattern as the old Drive mock. Left ON for the rest of the run so
+   heartbeats / auto-backup never leak a real network error. */
+await step(17, 'cloud: set server link → backup → sign up → dev console stats', async () => {
+  const DB = { users: [], logs: [], files: {}, key: '', installs: 0 };
+  const nowISO = () => new Date().toISOString();
   const CORS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, content-type',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, PUT, DELETE, OPTIONS',
     'Access-Control-Max-Age': '86400',
   };
+  const logIt = (user, result) => DB.logs.push({ t: nowISO(), user, result, device: 'e2e' });
+  const statsNow = () => ({
+    users: DB.users.length, installs: DB.installs, devices: DB.installs,
+    online: 1, loginsToday: DB.logs.filter(l => l.result === 'ok').length,
+    logins7d: DB.logs.filter(l => l.result === 'ok').length,
+    loginsTotal: DB.logs.filter(l => l.result === 'ok').length,
+  });
+  const mockExec = async (p) => {
+    const op = String(p.op || '');
+    if (op === 'ping') return { ok: true, server: 'masters-eye', now: nowISO() };
+    if (op === 'setupkey') {
+      if (DB.key && DB.key !== String(p.masterKey)) return { ok: false, error: 'An admin key is already set.' };
+      DB.key = String(p.masterKey); return { ok: true, saved: true };
+    }
+    const admin = () => DB.key && String(p.masterKey) === DB.key;
+    if (op === 'directory') return { ok: true, accounts: DB.users };
+    if (op === 'register') {
+      const u = String(p.username || '').toLowerCase();
+      if (DB.users.some(x => x.username === u)) return { ok: false, error: 'That username is taken.' };
+      const row = { id: String(p.role) + '-m1-' + u, username: u, name: String(p.name), role: String(p.role || 'user'), pinHash: String(p.pinHash), photo: '', link: '' };
+      DB.users.push(row); logIt(u, 'register');
+      return { ok: true, account: { id: row.id, username: u, name: row.name, role: row.role } };
+    }
+    if (op === 'login') {
+      const u = String(p.username || '').toLowerCase();
+      const row = DB.users.find(x => x.username === u);
+      if (!row) { logIt(u, 'failed: no such user'); return { ok: false, error: 'No such username.' }; }
+      if (row.pinHash !== String(p.pinHash)) { logIt(u, 'failed: wrong password'); return { ok: false, error: 'Wrong password.' }; }
+      logIt(u, 'ok'); return { ok: true, account: { id: row.id, username: u } };
+    }
+    if (op === 'heartbeat') return { ok: true, at: nowISO() };
+    if (op === 'install') { DB.installs += 1; return { ok: true, installs: DB.installs }; }
+    if (op === 'backup') { DB.files[String(p.username)] = String(p.data); return { ok: true, at: nowISO(), bytes: String(p.data).length }; }
+    if (op === 'restore') {
+      const data = DB.files[String(p.username)];
+      if (!data) return { ok: false, found: false, error: 'No backup yet.' };
+      return { ok: true, data: JSON.parse(data) };
+    }
+    if (op === 'logs') { if (!admin()) return { ok: false, error: 'Wrong admin key.' }; return { ok: true, logs: DB.logs.slice(-Number(p.limit || 100)).reverse() }; }
+    if (op === 'stats') { if (!admin()) return { ok: false, error: 'Wrong admin key.' }; return { ok: true, stats: statsNow() }; }
+    if (op === 'users') { if (!admin()) return { ok: false, error: 'Wrong admin key.' }; return { ok: true, users: DB.users }; }
+    if (op === 'update') return { ok: true, update: null };
+    if (op === 'setpass' || op === 'reset' || op === 'setupdate') return { ok: true };
+    return { ok: false, error: 'Unknown op: ' + op };
+  };
 
   const handler = async (req) => {
     const u = req.url();
     try {
-      if (u.startsWith('https://accounts.google.com/gsi/client')) {
-        await req.respond({ status: 200, headers: { ...CORS, 'Content-Type': 'application/javascript' }, body: GIS_STUB });
-        return;
-      }
-      if (u.includes('googleapis.com/drive/v3/files')) {
-        if (req.method() === 'OPTIONS') {
-          await req.respond({ status: 204, headers: CORS, body: '' });
-          return;
-        }
-        if (u.includes('file1?alt=media')) {
-          await req.respond({ status: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body: JSON.stringify(backup) });
-          return;
-        }
-        await req.respond({ status: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body: JSON.stringify({ files: [{ id: 'file1', name: 'masters-eye-shared.json' }] }) });
+      if (u.includes('script.google.com/macros/s/MOCK/exec')) {
+        if (req.method() === 'OPTIONS') { await req.respond({ status: 204, headers: CORS, body: '' }); return; }
+        let payload = {};
+        if (req.method() === 'POST') payload = JSON.parse(req.postData() || '{}');
+        else payload = JSON.parse(decodeURIComponent((u.split('?p=')[1] || '%7B%7D')));
+        const body = JSON.stringify(await mockExec(payload));
+        await req.respond({ status: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body });
         return;
       }
       await req.continue().catch(() => {});
@@ -906,56 +853,152 @@ await step(19, 'reinstall: wipe app → Drive restore (mocked) → old logins + 
   page.on('request', handler);
   await page.setRequestInterception(true);
 
-  try {
-    // deleting the app = every local key gone; demoSeed re-runs on the next
-    // load (it only seeds when the key is absent) and returns accounts:[]
-    await ev(() => {
-      localStorage.removeItem('masters-eye-v2');
-      localStorage.removeItem('masters-eye-session');
-      localStorage.removeItem('masters-eye-v2:corrupt');
-    });
-    await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  const MOCK_URL = 'https://script.google.com/macros/s/MOCK/exec';
+  const srvMsg = async () => ev(() => {
+    const n = t => String(t || '').replace(/\s+/g, ' ').trim();
+    const cands = [...document.querySelectorAll('div')].map(d => n(d.innerText)).filter(t => t.startsWith('✓') || t.startsWith('✗'));
+    return cands[cands.length - 1] || '';
+  });
 
-    const setup = await waitFor('first-run screen with Create login', async () =>
-      (await ev(() => [...document.querySelectorAll('button')].some(b => String(b.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase() === 'create login'))) ? true : false, 45000);
-    if (!setup) throw new Error('fresh boot never showed the setup screen');
-    const st0 = await ev(() => JSON.parse(localStorage.getItem('masters-eye-v2') || '{}'));
-    if ((st0.accounts || []).length) throw new Error('wipe failed — accounts still present: ' + JSON.stringify((st0.accounts || []).map(a => a.name)));
+  await go('more');
+  await waitFor('Settings screen', async () => (await screenName()) === 'Settings');
+  const urlField = await setNative('input[placeholder^="https://script.google.com"]', MOCK_URL);
+  if (!urlField.ok) throw new Error('server link input not found on Settings');
+  await clickBtn({ text: 'Save server', exact: true });
+  await waitFor('server saved + reachable', async () => (await srvMsg()).includes('reachable'), 20000);
 
-    // type the Client ID once (fresh install has no settings) and restore
-    const typed = await setNative('input[placeholder^="Google Client ID"]', 'test-id.apps.googleusercontent.com');
-    if (!typed.ok) throw new Error('Client ID input not found on the setup screen');
-    await clickBtn({ text: 'Sign in with Google' });
-    await waitFor('account picker showing "Restored Master"', async () => (await accountButtons()).some(t => t.toLowerCase().includes('restored master')), 15000);
+  // admin key lives on the Dev console screen
+  await clickBtn({ text: 'Open Dev console', exact: true });
+  await waitFor('Dev console screen', async () => (await screenName()) === 'Dev console');
+  const setKey = await setNative('input[type="password"]', 'lokey123');
+  if (!setKey.ok) throw new Error('admin key input not found');
+  await clickBtn({ text: 'Save admin key', exact: true });
+  await waitFor('admin key saved', async () => ev(() => {
+    const n = t => String(t || '').replace(/\s+/g, ' ').trim();
+    return [...document.querySelectorAll('div')].some(d => n(d.innerText).startsWith('✓ Admin key saved'));
+  }), 20000);
 
-    // the OLD pin still opens the account
-    await clickBtn({ text: 'Restored Master' });
-    await waitFor('PIN field on the picker', async () => (await page.$$('input[type="password"]')).length === 1);
-    await setNative('input[type="password"]', '1234');
-    await clickBtn({ text: 'Enter', exact: true });
-    await waitFor('dashboard after restored login', async () => (await screenName()) === "Master's Eye", 15000);
+  // push a cloud backup as the master (no username → shared "org" key)
+  await clickBtn({ text: 'Backup now', exact: true, scope: null });
+  await waitFor('backup pushed', async () => ev(() => {
+    const n = t => String(t || '').replace(/\s+/g, ' ').trim();
+    return [...document.querySelectorAll('div')].some(d => n(d.innerText).includes('Backup pushed'));
+  }), 20000);
 
-    const sess = await ev(() => localStorage.getItem('masters-eye-session'));
-    if (sess !== accId) throw new Error('session not written for the restored account; got ' + JSON.stringify(sess));
-
-    const chk = await ev(() => {
-      const s = JSON.parse(localStorage.getItem('masters-eye-v2') || '{}');
-      return {
-        acc: (s.accounts || []).map(a => a.name),
-        w: (s.workers || []).map(w => w.name),
-        led: (s.ledger || []).length,
-        note: (s.ledger || []).find(l => l.id === 'led-restored')?.note || '',
-      };
-    });
-    if (!chk.acc.includes('Restored Master')) throw new Error('restored accounts missing: ' + JSON.stringify(chk.acc));
-    if (!chk.w.includes('Restored Worker')) throw new Error('restored workers missing: ' + JSON.stringify(chk.w));
-    if (chk.note !== 'restored marker' || !chk.led) throw new Error('restored ledger marker missing: ' + JSON.stringify(chk));
-
-    return `wiped both keys → setup screen → typed Client ID → mocked Drive pull → picker "Restored Master" → PIN 1234 → dashboard; ${chk.acc.length} account / ${chk.w.length} worker / ${chk.led} ledger rows restored`;
-  } finally {
-    page.off('request', handler);
-    await page.setRequestInterception(false).catch(() => {});
+  // sign up a public member from the picker (logout first)
+  await clickBtn({ text: 'log out', exact: true });
+  await waitFor('account picker', async () => (await accountButtons()).length >= 1, 8000);
+  await clickBtn({ text: 'Sign up', exact: false });
+  await waitFor('signup view', async () => (await bodyText()).toLowerCase().includes('create your account'));
+  // ServerField is hidden (the link is already stored) → inputs are
+  // 0 username, 1 name, 2 password, 3 repeat
+  const fU = await setNative('input', 'rahul', 0);
+  const fN = await setNative('input', 'Rahul Wood', 1);
+  const fP = await setNative('input[type="password"]', '5678', 0);
+  const fP2 = await setNative('input[type="password"]', '5678', 1);
+  if (!fU.ok || !fN.ok || !fP.ok || !fP2.ok) {
+    throw new Error('signup fields: ' + JSON.stringify({ fU, fN, fP, fP2 }));
   }
+  await clickBtn({ text: 'Sign up', exact: true, scope: null, nth: 0 });
+  await waitFor('member home after signup', async () => {
+    const t2 = (await bodyText()).toLowerCase();
+    return t2.includes('member') && t2.includes('check for updates');
+  }, 20000);
+  const who = await ev(() => (JSON.parse(localStorage.getItem('masters-eye-v2')).accounts || []).map(a => a.username).filter(Boolean));
+  if (!who.includes('rahul')) throw new Error('rahul not stored locally after signup: ' + JSON.stringify(who));
+
+  // back to master → console shows the new user in stats/logs
+  await clickBtn({ text: 'log out', exact: true });
+  await waitFor('picker with master + rahul', async () => (await accountButtons()).length >= 2, 8000);
+  await ev(() => {
+    const b = [...document.querySelectorAll('button')].find(x => x.querySelector('img') && String(x.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase().includes('master'));
+    b && b.click();
+  });
+  await waitFor('PIN field', async () => (await ev(() => !!document.querySelector('input[type="password"]'))));
+  await page.focus('input[type="password"]');
+  await page.type('input[type="password"]', '1234', { delay: 25 });
+  await page.keyboard.press('Enter');
+  await waitFor('master dashboard', async () => (await screenName()) === "Master's Eye", 9000);
+  await go('more');
+  await clickBtn({ text: 'Open Dev console', exact: true });
+  await waitFor('Dev console screen', async () => (await screenName()) === 'Dev console');
+  await clickBtn({ text: 'Refresh', exact: false });
+  await waitFor('stats show 1 user', async () => {
+    const t2 = (await bodyText()).replace(/\s+/g, ' ');
+    return /users\s*1/i.test(t2) || /users1/i.test(t2.replace(/\s+/g, ''));
+  }, 20000);
+  const consoleTxt = (await bodyText()).toLowerCase();
+  if (!consoleTxt.includes('rahul')) throw new Error('console users/logs do not mention rahul');
+  if (!consoleTxt.includes('register') && !consoleTxt.includes('ok')) throw new Error('login log empty on console');
+  return 'server link + admin key saved → cloud backup pushed → rahul signed up (role user, local account kept) → console shows 1 user + register/login log';
+});
+
+/* ── step 18: reinstall — wipe local keys → username login → auto-restore ── */
+await step(18, 'reinstall: wipe → username login → org backup restored → old logins back', async () => {
+  await ev(() => {
+    for (const k of ['masters-eye-v2', 'masters-eye-session', 'masters-eye-v2:corrupt',
+      'masters-eye-serverurl', 'masters-eye-masterkey', 'masters-eye-directory',
+      'masters-eye-device', 'masters-eye-pinged']) localStorage.removeItem(k);
+  });
+  // ?fresh=1 tells the fixture seeder to stay out — a reinstall boots truly blank
+  await page.goto(URL + '?fresh=1', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+  const setup = await waitFor('first-run screen with Create login', async () =>
+    (await ev(() => [...document.querySelectorAll('button')].some(b => String(b.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase() === 'create login'))) ? true : false, 45000);
+  if (!setup) throw new Error('fresh boot never showed the setup screen');
+
+  // forgot-password screen: static contact guidance (support email not set yet)
+  await clickBtn({ text: 'Log in', exact: true });
+  await waitFor('login view', async () => (await bodyText()).toLowerCase().includes('log in to your account'));
+  await clickBtn({ text: 'Forgot password?', exact: true });
+  await waitFor('forgot screen', async () => {
+    const t2 = (await bodyText()).toLowerCase();
+    return t2.includes('forgot password') && t2.includes('hashes');
+  });
+  await clickBtn({ text: 'Back to log in', exact: true });
+  await waitFor('back at login view', async () => (await bodyText()).toLowerCase().includes('log in to your account'));
+
+  // no server link on a fresh install — paste it, then sign in as rahul
+  const urlField = await setNative('input[placeholder^="https://script.google.com"]', 'https://script.google.com/macros/s/MOCK/exec');
+  if (!urlField.ok) throw new Error('server link field missing on the login view');
+  // inputs: 0 server link, 1 username, 2 password
+  const uf = await setNative('input', 'rahul', 1);
+  const pf = await setNative('input[type="password"]', '5678');
+  if (!uf.ok || !pf.ok) throw new Error('login fields: ' + JSON.stringify({ uf, pf }));
+  await clickBtn({ text: 'Log in', exact: true, scope: null, nth: 0 });
+  await waitFor('member home after server login', async () => {
+    const t2 = (await bodyText()).toLowerCase();
+    return t2.includes('member') && t2.includes('check for updates');
+  }, 30000);
+
+  const chk = await ev(() => {
+    const s = JSON.parse(localStorage.getItem('masters-eye-v2') || '{}');
+    return {
+      acc: (s.accounts || []).map(a => a.name),
+      led: (s.ledger || []).length,
+      oak: (s.woodLots || []).find(l => l.id === 'l3')?.cubicFeet,
+      users: (s.accounts || []).filter(a => a.role === 'user').map(a => a.username),
+    };
+  });
+  if (!chk.acc.includes('Master')) throw new Error('org backup did not restore the master login: ' + JSON.stringify(chk.acc));
+  if (!chk.led) throw new Error('ledger empty — org backup not restored');
+  if (chk.oak !== 3) throw new Error('restored Oak lot is ' + chk.oak + ' ft³, expected 3 (mutated in step 16)');
+  if (!chk.users.includes('rahul')) throw new Error('rahul missing after merge: ' + JSON.stringify(chk.users));
+
+  // the OLD master PIN still opens the restored account
+  await clickBtn({ text: 'log out', exact: true });
+  await waitFor('picker with restored master', async () => (await accountButtons()).length >= 2, 8000);
+  await ev(() => {
+    const b = [...document.querySelectorAll('button')].find(x => x.querySelector('img') && String(x.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase().includes('master'));
+    b && b.click();
+  });
+  await waitFor('PIN field', async () => (await ev(() => !!document.querySelector('input[type="password"]'))));
+  await setNative('input[type="password"]', '1234');
+  await clickBtn({ text: 'Enter', exact: true });
+  await waitFor('dashboard after restored login', async () => (await screenName()) === "Master's Eye", 15000);
+  await waitFor('low-stock alert still live after restore', async () => (await bodyText()).toLowerCase().includes('low stock'));
+
+  return 'wiped 8 local keys → setup → forgot screen → pasted /exec link → rahul/PW login → org backup restored (' + chk.led + ' ledger rows, Oak ' + chk.oak + ' ft³, ' + chk.acc.length + ' logins) → master PIN 1234 → dashboard';
 });
 
 /* ───────────────────────────── report ───────────────────────────── */

@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Camera, Users, Wallet, Settings as Cog, Home, LogOut } from 'lucide-react';
-import { AppState, loadState, saveState, syncToDrive, Account, effectiveCid } from './store';
+import { AppState, loadState, saveState, syncToDrive, Account, APP_VERSION } from './store';
 import { readSession, writeSession, clearSession } from './lib/auth';
-import { drivePush, driveFileName, isConnected, silentConnect, everConnected } from './lib/drive';
+import { hasServer, heartbeat, installPing, backupState } from './lib/server';
 import { Header } from './components/ui';
 import LoginGate from './components/LoginGate';
 import Dashboard from './pages/Dashboard';
 import VendorHome from './pages/VendorHome';
 import MyWork from './pages/MyWork';
 import ClientHome from './pages/ClientHome';
+import UserHome from './pages/UserHome';
 import TeamPage from './pages/TeamPage';
 import ClientsPage from './pages/ClientsPage';
 import OrdersPage from './pages/OrdersPage';
@@ -16,23 +17,25 @@ import MillPage from './pages/MillPage';
 import PaymentsPage from './pages/PaymentsPage';
 import ExpensesPage from './pages/ExpensesPage';
 import SettingsPage from './pages/SettingsPage';
-import Assistant from './components/Assistant';
+import Console from './pages/Console';
 
 const titles: Record<string, string> = {
   dashboard: "Master's Eye",
   vendorHome: 'My Supply',
   mywork: 'My Work',
   clientHome: 'My Orders',
+  userHome: "Master's Eye",
   team: 'Team & Attendance',
   clients: 'Clients',
   orders: 'Orders & Designs',
   mill: 'Joinery Mill',
   payments: 'Payments',
   expenses: 'Consumables',
+  console: 'Dev console',
   settings: 'Settings'
 };
 
-type Role = 'master' | 'vendor' | 'team' | 'client';
+type Role = 'master' | 'vendor' | 'team' | 'client' | 'user';
 
 export default function App() {
   const [state, setStateRaw] = useState<AppState>(() => loadState());
@@ -42,47 +45,45 @@ export default function App() {
 
   useEffect(() => { saveState(state); }, [state]);
 
-  /* ── cloud auto-backup (the "other apps" behaviour) ─────────────────────
-     Once Google has been connected on this install, every boot silently
-     resumes the session and re-pushes the latest state; every change after
-     that re-pushes on a short debounce. Deinstalling the phone app doesn't
-     touch this copy — reinstalling pulls it straight back. */
+  /* ── the Drive-as-server presence + cloud backup ───────────────────────
+     Heartbeat keeps "online" live in the master's console; installs ping
+     once per install (that counter is the download number); every settled
+     change re-pushes the state file on a short debounce, so deleting the
+     phone app costs nothing — log in again and the backup restores. */
+  const me = state.accounts.find(a => a.id === session) || null;
+  const myUser = me?.username || '';
+
   useEffect(() => {
-    const cid = effectiveCid(state);
-    if (!cid) return;
-    // only worth attempting when a grant could exist: previously connected,
-    // or an owner-saved Client ID from the old (pre-flag) builds
-    if (!everConnected() && !state.settings.googleClientId) return;
-    let dead = false;
-    silentConnect(cid).then(ok => {
-      if (dead || !ok) return;
-      drivePush(cid, driveFileName(), state).catch(() => { /* offline */ });
-    });
-    return () => { dead = true; };
+    if (!hasServer(state)) return;
+    try {
+      if (!localStorage.getItem('masters-eye-pinged')) {
+        localStorage.setItem('masters-eye-pinged', '1');
+        installPing(APP_VERSION);
+      }
+    } catch { /* private mode */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [state.settings.serverUrl]);
 
   useEffect(() => {
-    if (!isConnected()) return;
-    const cid = effectiveCid(state);
-    if (!cid) return;
-    const t = setTimeout(() => { drivePush(cid, driveFileName(), state).catch(() => { /* offline */ }); }, 8000);
+    if (!myUser || !hasServer(state)) return;
+    heartbeat(myUser);
+    const t = setInterval(() => { heartbeat(myUser); }, 60000);
+    const vis = () => { if (document.visibilityState === 'visible') heartbeat(myUser); };
+    document.addEventListener('visibilitychange', vis);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', vis); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myUser, state.settings.serverUrl]);
+
+  useEffect(() => {
+    if (!myUser || !hasServer(state)) return;
+    const t = setTimeout(() => { backupState(myUser, state); }, 15000);
     return () => clearTimeout(t);
-  }, [state]);
-
-  useEffect(() => {
-    const onHide = () => {
-      if (document.visibilityState !== 'hidden' || !isConnected()) return;
-      const cid = effectiveCid(state);
-      if (cid) drivePush(cid, driveFileName(), state).catch(() => { /* offline */ });
-    };
-    document.addEventListener('visibilitychange', onHide);
-    return () => document.removeEventListener('visibilitychange', onHide);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
   const setState = (s: AppState) => setStateRaw(s);
 
-  const account: Account | null = state.accounts.find(a => a.id === session) || null;
+  const account: Account | null = me;
   const gated = state.accounts.length > 0;
   const role: Role = account ? account.role : 'master';
 
@@ -103,12 +104,15 @@ export default function App() {
 
   /* role allow-lists */
   const allowed: Record<Role, string[]> = {
-    master: ['dashboard', 'team', 'clients', 'orders', 'mill', 'payments', 'expenses', 'settings'],
+    master: ['dashboard', 'team', 'clients', 'orders', 'mill', 'payments', 'expenses', 'console', 'settings'],
     vendor: ['vendorHome', 'settings'],
     team: ['mywork', 'settings'],
     client: ['clientHome', 'settings'],
+    user: ['userHome', 'settings'],
   };
-  const home: Record<Role, string> = { master: 'dashboard', vendor: 'vendorHome', team: 'mywork', client: 'clientHome' };
+  const home: Record<Role, string> = {
+    master: 'dashboard', vendor: 'vendorHome', team: 'mywork', client: 'clientHome', user: 'userHome',
+  };
   const current = allowed[role].includes(page) ? page : home[role];
   const go = (p: string) => setPage(allowed[role].includes(p) ? p : home[role]);
 
@@ -122,13 +126,15 @@ export default function App() {
       case 'vendorHome': return <VendorHome state={state} account={account!} />;
       case 'mywork': return <MyWork state={state} account={account!} />;
       case 'clientHome': return <ClientHome state={state} setState={setState} account={account!} />;
+      case 'userHome': return <UserHome state={state} account={account!} onLogout={logout} />;
       case 'team': return <TeamPage state={state} setState={setState} />;
       case 'clients': return <ClientsPage state={state} setState={setState} />;
       case 'orders': return <OrdersPage state={state} setState={setState} />;
       case 'mill': return <MillPage state={state} setState={setState} />;
       case 'payments': return <PaymentsPage state={state} setState={setState} />;
       case 'expenses': return <ExpensesPage state={state} setState={setState} />;
-      case 'settings': return <SettingsPage state={state} setState={setState} sync={sync} syncing={syncing} account={account} role={role} onLogout={logout} />;
+      case 'console': return <Console state={state} setState={setState} />;
+      case 'settings': return <SettingsPage state={state} setState={setState} sync={sync} syncing={syncing} account={account} role={role} onLogout={logout} onConsole={() => go('console')} />;
       default: return <Dashboard state={state} navigate={go} sync={sync} syncing={syncing} />;
     }
   };
@@ -144,6 +150,9 @@ export default function App() {
     { id: 'settings', icon: Cog, label: 'More' },
   ] : role === 'client' ? [
     { id: 'clientHome', icon: Home, label: 'Home' },
+    { id: 'settings', icon: Cog, label: 'More' },
+  ] : role === 'user' ? [
+    { id: 'userHome', icon: Home, label: 'Home' },
     { id: 'settings', icon: Cog, label: 'More' },
   ] : [
     { id: 'mywork', icon: Home, label: 'Home' },
@@ -173,7 +182,6 @@ export default function App() {
         }
       />
       {body()}
-      {role === 'master' && <Assistant state={state} setState={setState} />}
       <div className="fixed bottom-0 inset-x-0 max-w-md mx-auto bg-white border-t border-gray-200 px-6 py-3 flex justify-between items-center shadow-2xl z-40">
         {nav.map(n => (
           <button key={n.id} onClick={() => go(n.id)}

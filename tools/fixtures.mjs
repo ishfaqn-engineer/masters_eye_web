@@ -6,13 +6,14 @@
    Used only by tools/*.mjs — never shipped, never imported by the app. */
 export function demoSeed() {
   try {
+    if (location.search.includes('fresh')) return; // reinstall-leg: boot truly blank
     if (localStorage.getItem('masters-eye-v2')) return;
     const d = new Date();
     const pad = n => String(n).padStart(2, '0');
     const t = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     localStorage.setItem('masters-eye-v2', JSON.stringify({
       v: 2,
-      settings: { masterName: 'Master', masterPhoto: 'https://i.pravatar.cc/300?u=master', masterRate: 2000, whatsappNumber: '', currency: 'Rs', googleClientId: '' },
+      settings: { masterName: 'Master', masterPhoto: 'https://i.pravatar.cc/300?u=master', masterRate: 2000, whatsappNumber: '', currency: 'Rs', serverUrl: '', supportEmail: '' },
       accounts: [],
       workers: [
         { id: 'w1', name: 'Ali', photo: 'https://i.pravatar.cc/150?u=ali', rate: 1500, phone: '03001112223' },

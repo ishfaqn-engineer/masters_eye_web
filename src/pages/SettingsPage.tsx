@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MessageCircle, Trash2, RefreshCw, Phone, Pencil, Upload, Users, HardDrive, Info, LogOut, KeyRound, Cloud, Plus, ShieldCheck, Sparkles } from 'lucide-react';
-import { AppState, Account, Role, blankState, normalizeState, Worker, effectiveCid } from '../store';
+import { MessageCircle, Trash2, RefreshCw, Phone, Pencil, Upload, Users, HardDrive, Info, LogOut, KeyRound, Cloud, Plus, ShieldCheck, Server, Smartphone, Download } from 'lucide-react';
+import { AppState, Account, Role, blankState, normalizeState, Worker, APP_VERSION, APP_CODE } from '../store';
 import { money, Modal, Field, inputCls, PhotoInput, MoneyField, StatCard, WhatsAppBtn } from '../components/ui';
 import { clearFiles } from '../lib/files';
 import { hashPin, makeAccount, verifyPin } from '../lib/auth';
-import { drivePush, drivePull, driveFileName, legacyDriveFileName, disconnectGoogle } from '../lib/drive';
+import {
+  getServerUrl, setServerUrl, ping, backupState, restoreState, syncDirectory, checkUpdate, changePassword, UpdateInfo,
+} from '../lib/server';
 
 type Props = {
   state: AppState;
@@ -14,11 +16,12 @@ type Props = {
   account: Account | null;
   role: Role;
   onLogout: () => void;
+  onConsole: () => void;
 };
 
-const roleLabel: Record<Role, string> = { master: 'Master', vendor: 'Vendor', team: 'Team member', client: 'Client' };
+const roleLabel: Record<Role, string> = { master: 'Master', vendor: 'Vendor', team: 'Team member', client: 'Client', user: 'Member' };
 
-export default function SettingsPage({ state, setState, sync, syncing, account, role, onLogout }: Props) {
+export default function SettingsPage({ state, setState, sync, syncing, account, role, onLogout, onConsole }: Props) {
   const isMaster = role === 'master';
   const [editMaster, setEditMaster] = useState(false);
   const [draft, setDraft] = useState({ name: state.settings.masterName, photo: state.settings.masterPhoto, rate: state.settings.masterRate });
@@ -32,29 +35,21 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
   const [accDraft, setAccDraft] = useState({ name: '', role: 'vendor' as Role, pin: '', vendorId: '', workerId: '', clientId: '' });
   const blankAccDraft = () => ({ name: '', role: 'vendor' as Role, pin: '', vendorId: '', workerId: '', clientId: '' });
 
-  // drive
-  const [gClientId, setGClientId] = useState(state.settings.googleClientId);
-  const [driveMsg, setDriveMsg] = useState('');
-
-  // kashmiri assistant (master)
-  const [aiKey, setAiKey] = useState(state.settings.aiKey);
-  const [aiModel, setAiModel] = useState(state.settings.aiModel);
-  const [aiBase, setAiBase] = useState(state.settings.aiBaseUrl);
-  const [aiMsg, setAiMsg] = useState('');
-  const saveAi = () => {
-    setState({
-      ...state,
-      settings: {
-        ...state.settings,
-        aiKey: aiKey.trim(),
-        aiModel: aiModel.trim() || 'gemma4:31b',
-        aiBaseUrl: aiBase.trim() || 'https://ollama.com/api',
-      },
-    });
-    setAiMsg(aiKey.trim() ? '✓ Saved — assistant ab khula bol sakta hai.' : '✓ Key hata di — ab sirf offline commands chalenge.');
-  };
+  // cloud server (master)
+  const [srvUrl, setSrvUrl] = useState(getServerUrl(state) || state.settings.serverUrl);
+  const [support, setSupport] = useState(state.settings.supportEmail);
+  const [srvMsg, setSrvMsg] = useState('');
+  const [upd, setUpd] = useState<UpdateInfo | null>(null);
 
   useEffect(() => { setWa(state.settings.whatsappNumber); }, [state.settings.whatsappNumber]);
+
+  useEffect(() => {
+    if (!isMaster) return;
+    let dead = false;
+    checkUpdate(APP_CODE).then(r => { if (!dead && r.ok && r.update) setUpd(r.update); }).catch(() => { /* offline */ });
+    return () => { dead = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* ── profile / rates / whatsapp (master) ─────────────────── */
   const saveMaster = () => {
@@ -115,15 +110,22 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
 
   const changePin = async (acc: Account) => {
     // changing your OWN pin requires proving the current one first
+    let provedPin = '';
     if (acc.id === account?.id) {
       const oldPin = prompt('Enter your CURRENT PIN:') || '';
       if (!oldPin) return;
       if (!(await verifyPin(acc, oldPin))) { alert('Current PIN is wrong.'); return; }
+      provedPin = oldPin;
     }
     const pin = prompt(`New 4–6 digit PIN for ${acc.name}:`) || '';
     if (!/^\d{4,6}$/.test(pin)) { if (pin) alert('PIN must be 4 to 6 digits.'); return; }
-    const pinHash = await hashPin(pin, acc.id);
+    const salt = acc.username || acc.id;
+    const pinHash = await hashPin(pin, salt);
     setState({ ...state, accounts: state.accounts.map(a => a.id === acc.id ? { ...a, pinHash } : a) });
+    // a server-registered login must change the password in both places
+    if (acc.username && provedPin && getServerUrl(state)) {
+      changePassword(acc.username, provedPin, pin).catch(() => { /* offline */ });
+    }
     alert('PIN changed.');
   };
 
@@ -135,49 +137,45 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
     alert('Login created. It switches on the next time the app opens.');
   };
 
-  /* ── drive ───────────────────────────────────────────────── */
-  const saveClientId = () => setState({ ...state, settings: { ...state.settings, googleClientId: gClientId.trim() } });
-
-  const doDrivePush = async () => {
-    const cid = gClientId.trim() || effectiveCid(state);
-    if (!cid) { alert('Enter your Google Client ID first (see help below).'); return; }
-    setDriveMsg('Connecting to Google…');
-    saveClientId();
-    const res = await drivePush(cid, driveFileName(account?.id || 'master'), { ...state, exportedAt: new Date().toISOString() });
-    setDriveMsg(res.ok ? `✓ Backed up to your Drive at ${new Date(res.at!).toLocaleTimeString()}` : `✗ ${res.error}`);
+  /* ── cloud server ───────────────────────────────────────── */
+  const saveServer = async () => {
+    const v = srvUrl.trim();
+    setServerUrl(v);
+    setState({ ...state, settings: { ...state.settings, serverUrl: v, supportEmail: support.trim() } });
+    if (!v) { setSrvMsg('Server link cleared — running local only.'); return; }
+    const res = await ping();
+    setSrvMsg(res.ok ? '✓ Saved — server reachable.' : `✗ Saved, but: ${res.error}`);
   };
 
-  const doDrivePull = async () => {
-    const cid = gClientId.trim() || effectiveCid(state);
-    if (!cid) { alert('Enter your Google Client ID first (see help below).'); return; }
-    if (!confirm('Replace ALL current data with the SHARED copy from Google Drive?\n\nIf another device pushed newer records after this device\'s last backup, this device\'s newer changes will be lost.')) return;
-    setDriveMsg('Downloading from Google…');
-    let res = await drivePull<any>(cid, driveFileName(account?.id || 'master'));
-    // shared copy missing → fall back to this account's pre-shared backup name
-    if (!res.ok && res.found === false && account?.id) {
-      const legacy = await drivePull<any>(cid, legacyDriveFileName(account.id));
-      if (legacy.found) {
-        res = legacy;
-        setDriveMsg('Found an older per-login backup — restoring it (next Backup writes the new shared copy).');
-      }
-    }
-    if (res.ok && res.data) {
-      // same guard as file restore — a wrong-version payload would brick the next boot
-      if (res.data?.v !== 2) {
-        setDriveMsg('✗ That Drive copy is not a Master\'s Eye v2 backup.');
-      } else {
-        const next = normalizeState(res.data, blankState());
-        // only the master may replace logins — a vendor / team / client pull must
-        // never rewrite the account list (auth hardening from 9529829)
-        setState(isMaster ? next : { ...next, accounts: state.accounts });
-        setDriveMsg('✓ Restored from your Drive.');
-      }
-    } else {
-      setDriveMsg(`✗ ${res.error}`);
-    }
+  const saveSupport = () =>
+    setState({ ...state, settings: { ...state.settings, supportEmail: support.trim() } });
+
+  // shared org backup key: a server username if one exists here, else "org"
+  const cloudUser = () => account?.username || state.accounts.find(a => a.username)?.username || 'org';
+
+  const doCloudPush = async () => {
+    const who = cloudUser();
+    if (!who) { setSrvMsg('✗ No server-registered login on this device — sign up with a username first.'); return; }
+    setSrvMsg('Pushing to your Drive…');
+    const res = await backupState(who, state);
+    setSrvMsg(res.ok ? `✓ Backed up at ${new Date().toLocaleTimeString()}` : `✗ ${res.error}`);
   };
 
-  const doDisconnect = () => { disconnectGoogle(); setDriveMsg('Disconnected from Google.'); };
+  const doCloudPull = async () => {
+    const who = cloudUser();
+    if (!who) { setSrvMsg('✗ No server-registered login on this device.'); return; }
+    if (!confirm('Replace ALL current data with the copy from the server?')) return;
+    setSrvMsg('Downloading from your Drive…');
+    const res = await restoreState(who);
+    if (!res.ok) { setSrvMsg(`✗ ${res.error}`); return; }
+    if (res.data?.v !== 2) { setSrvMsg('✗ That copy is not a Master\'s Eye v2 backup.'); return; }
+    const next = normalizeState(res.data, blankState());
+    // only the master may replace logins — a vendor / team / client pull must
+    // never rewrite the account list (auth hardening from 9529829)
+    setState(isMaster ? next : { ...next, accounts: state.accounts });
+    await syncDirectory().catch(() => { /* offline */ });
+    setSrvMsg('✓ Restored from the server.');
+  };
 
   /* ── data ────────────────────────────────────────────────── */
   const onRestoreFile = async (f: File | undefined) => {
@@ -286,32 +284,6 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
             </div>
           </div>
 
-          {/* ── Kashmiri assistant (master) ─────── */}
-          <div className="bg-white rounded-3xl shadow p-4">
-            <div className="flex items-center gap-2 font-black uppercase text-sm mb-1">
-              <Sparkles size={16} className="text-wood" /> Kashmiri voice assistant
-            </div>
-            <div className="text-xs text-gray-400 font-bold mb-3">
-              Sparkle button (bottom-right) se bol dein — <b>"Zaid aaj gair-haazir"</b>, <b>"client ne 5000 dyut"</b>,
-              <b> "cash kinna hai"</b>. Basic commands <b>offline</b> chalte hain; AI key daalo to aazad Kashmiri /
-              Urdu / English sab samajh lega (Gemma via Ollama — internet chahiye).
-            </div>
-            <Field label="AI API key (ollama.com → Settings → API keys)">
-              <input className={inputCls + ' text-sm'} type="password" value={aiKey} onChange={e => setAiKey(e.target.value)}
-                placeholder="paste your ollama key (sirf is device par rehta hai)" autoComplete="off" />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Model">
-                <input className={inputCls + ' text-sm'} value={aiModel} onChange={e => setAiModel(e.target.value)} placeholder="gemma4:31b" />
-              </Field>
-              <Field label="Endpoint">
-                <input className={inputCls + ' text-sm'} value={aiBase} onChange={e => setAiBase(e.target.value)} placeholder="https://ollama.com/api" />
-              </Field>
-            </div>
-            <button onClick={saveAi} className="w-full py-3 rounded-2xl bg-wood text-white font-black uppercase active:scale-95">Save assistant</button>
-            {aiMsg && <div className="text-xs font-black mt-2 text-center text-gray-600">{aiMsg}</div>}
-          </div>
-
           {/* ── Accounts & login ───────────────── */}
           <div className="bg-white rounded-3xl shadow p-4">
             <div className="flex items-center justify-between mb-1">
@@ -356,44 +328,57 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
         </>
       )}
 
-      {/* ── Google Drive (all roles — ONE shared copy keeps master / client / team integrated) ── */}
-      <div className="bg-white rounded-3xl shadow p-4">
-        <div className="flex items-center gap-2 font-black uppercase text-sm mb-1">
-          <Cloud size={16} className="text-blue-600" /> Google Drive
-        </div>
-        <div className="text-xs text-gray-400 font-bold mb-3">
-          Every login reads and writes <b>one shared copy</b> — upload a design as the client, Restore as the
-          master, and the order is there. Device A pushes, device B pulls, same records both sides.
-        </div>
-        <Field label="Google OAuth Client ID (one-time setup)">
-          <input className={inputCls + ' text-sm'} value={gClientId} onChange={e => setGClientId(e.target.value)}
-            placeholder="xxxx.apps.googleusercontent.com" />
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <button onClick={doDrivePush} className="py-3 rounded-2xl bg-blue-600 text-white font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2">
-            <Cloud size={16} /> Backup to Drive
+      {/* ── Cloud server (master) — Drive-as-server, no Google sign-in ── */}
+      {isMaster && (
+        <div className="bg-white rounded-3xl shadow p-4">
+          <div className="flex items-center gap-2 font-black uppercase text-sm mb-1">
+            <Cloud size={16} className="text-blue-600" /> Cloud server
+          </div>
+          <div className="text-xs text-gray-400 font-bold mb-3">
+            Your own Apps Script link plays the server: logins, signup, login log and backups live in your Google
+            Drive. <b>No Google sign-in in the app</b> — the link is the connection. Leave empty to run local-only.
+          </div>
+          <Field label="Apps Script /exec link">
+            <input className={inputCls + ' text-sm'} value={srvUrl} onChange={e => setSrvUrl(e.target.value)}
+              placeholder="https://script.google.com/macros/s/…/exec" autoComplete="off" />
+          </Field>
+          <Field label="Support email (for “Forgot password?”)">
+            <input className={inputCls + ' text-sm'} value={support} onChange={e => setSupport(e.target.value)}
+              placeholder="you@example.com" inputMode="email" />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={saveServer} className="py-3 rounded-2xl bg-blue-600 text-white font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2">
+              <Server size={15} /> Save server
+            </button>
+            <button onClick={saveSupport} className="py-3 rounded-2xl bg-gray-100 font-black uppercase text-xs active:scale-95">Save contact</button>
+          </div>
+          <div className="grid grid-cols-2 gap-3 mt-2">
+            <button onClick={doCloudPush} className="py-3 rounded-2xl bg-wood/10 text-wood font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2">
+              <Cloud size={15} /> Backup now
+            </button>
+            <button onClick={doCloudPull} className="py-3 rounded-2xl bg-gray-100 font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2">
+              <Upload size={15} /> Restore
+            </button>
+          </div>
+          <button onClick={onConsole}
+            className="mt-3 w-full py-3 rounded-2xl bg-gray-900 text-white font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2">
+            <Smartphone size={15} /> Open Dev console
           </button>
-          <button onClick={doDrivePull} className="py-3 rounded-2xl bg-gray-100 font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2">
-            <Upload size={16} /> Restore from Drive
-          </button>
+          {srvMsg && <div className="text-xs font-black mt-2 text-center text-gray-600">{srvMsg}</div>}
+          <div className="mt-3 bg-gray-50 rounded-xl p-3 text-[10px] font-bold text-gray-500 leading-relaxed">
+            <b>One-time setup:</b> script.google.com → paste <b>tools/apps-script/Backend.gs</b> → Deploy as web app
+            (Anyone) → copy the /exec link above. First run creates your “Master's Eye Server” spreadsheet in Drive.
+            Auto-backup pushes 15 seconds after every change; reinstall → log in with your username → data returns.
+            {upd && (
+              <div className="mt-2 text-amber-700">
+                <Download size={11} className="inline" /> <b>v{upd.latest} is available</b>
+                {upd.notes ? ` — ${upd.notes}` : ''}
+                {upd.url && <a href={upd.url} target="_blank" rel="noreferrer" className="underline"> Get it</a>}
+              </div>
+            )}
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-3 mt-2">
-          <button onClick={saveClientId} className="py-3 rounded-2xl bg-wood/10 text-wood font-black uppercase text-xs active:scale-95">Save ID</button>
-          <button onClick={doDisconnect} className="py-3 rounded-2xl bg-gray-100 font-black uppercase text-xs active:scale-95">Disconnect</button>
-        </div>
-        {driveMsg && <div className="text-xs font-black mt-2 text-center text-gray-600">{driveMsg}</div>}
-        <div className="mt-3 bg-gray-50 rounded-xl p-3 text-[10px] font-bold text-gray-500 leading-relaxed">
-          <b>How to get the ID (once):</b> console.cloud.google.com → APIs &amp; Services → Credentials →
-          Create OAuth client ID → Web application → add these to <i>Authorized JavaScript origins</i>:
-          <b> https://appassets.androidplatform.net</b> (app) and <b>http://localhost:5173</b> (web dev).
-          Paste the ID above and press Save ID. Once you have pressed Backup to
-          Drive (or Restored) once, backup runs <b>automatically after every
-          change</b> — like other apps' cloud sync. Fresh reinstall? The
-          first-run screen shows <b>Sign in with Google</b> — one tap and your
-          records + logins come back. Without an ID, use <b>Backup now</b> (file
-          backup) instead.
-        </div>
-      </div>
+      )}
 
       {/* ── Data & backup ─────────────────────── */}
       <div className="bg-white rounded-3xl shadow p-4">

@@ -2,14 +2,10 @@ export type ID = string;
 
 import { saveBlob } from './lib/native';
 
-/* Google OAuth Client ID baked into the build (client IDs are public by
-   design — they identify the app, never authenticate anyone). A per-device
-   Settings value overrides it. This is what lets a FRESH INSTALL sign in and
-   pull its data back without typing anything. */
-export const DEFAULT_GOOGLE_CLIENT_ID = '';
-
-export const effectiveCid = (s: AppState): string =>
-  ((s?.settings?.googleClientId) || DEFAULT_GOOGLE_CLIENT_ID).trim();
+/* shipped build identity — the update check compares these against the
+   server manifest (op=update) */
+export const APP_VERSION = '2.0.0';
+export const APP_CODE = 11;
 
 export type Worker = { id: ID; name: string; photo: string; rate: number; phone?: string };
 
@@ -176,17 +172,14 @@ export type Settings = {
   masterRate: number;
   whatsappNumber: string; // international, digits only, e.g. 923001234567
   currency: string;
-  /** OAuth client id from Google Cloud Console — enables Drive sync (optional) */
-  googleClientId: string;
-  /** Ollama (or any OpenAI-style) chat endpoint for the Kashmiri assistant (optional) */
-  aiBaseUrl: string;
-  /** API key for aiBaseUrl — stays on this device, travels with Drive backup */
-  aiKey: string;
-  /** chat model id, e.g. gemma4:31b */
-  aiModel: string;
+  /** the owner's Apps Script /exec URL — the app's "server" (accounts, logs,
+      backups). Empty = fully local, everything still works. */
+  serverUrl: string;
+  /** where "Forgot password?" sends people — set once by the master */
+  supportEmail: string;
 };
 
-export type Role = 'master' | 'vendor' | 'team' | 'client';
+export type Role = 'master' | 'vendor' | 'team' | 'client' | 'user';
 
 export type Account = {
   id: ID;
@@ -194,6 +187,10 @@ export type Account = {
   role: Role;
   /** SHA-256(pin + id) — never the PIN itself */
   pinHash: string;
+  /** public sign-up handle (role 'user', and any account registered on the
+      server) — login looks it up in the server directory, then falls back to
+      the cached copy offline */
+  username?: string;
   /** for role 'vendor': which vendor this login represents */
   vendorId?: ID;
   /** for role 'team': which worker this login represents */
@@ -275,10 +272,8 @@ export function emptyState(): AppState {
       masterRate: 2000,
       whatsappNumber: '',
       currency: 'Rs',
-      googleClientId: '',
-      aiBaseUrl: 'https://ollama.com/api',
-      aiKey: '',
-      aiModel: 'gemma4:31b'
+      serverUrl: '',
+      supportEmail: ''
     },
     accounts: [],
     workers: [
@@ -397,11 +392,13 @@ export function normalizeState(parsed: any, base: AppState = emptyState()): AppS
           status: STATUSES.includes(q.status) ? q.status : 'draft',
         }))
     : [];
+  // drop the legacy OAuth / AI settings — v2.0.0 removed both flows
+  const { googleClientId: _g, aiBaseUrl: _b, aiKey: _k, aiModel: _m, ...restSettings } = (parsed?.settings || {}) as any;
   return {
     ...base,
     ...parsed,
     v: 2,
-    settings: { ...base.settings, ...(parsed?.settings || {}) },
+    settings: { ...base.settings, ...restSettings },
     accounts: Array.isArray(parsed?.accounts) ? parsed.accounts : base.accounts,
     workers: Array.isArray(parsed?.workers) ? parsed.workers : [],
     attendance,
@@ -446,10 +443,8 @@ export function blankState(): AppState {
       masterRate: 0,
       whatsappNumber: '',
       currency: 'Rs',
-      googleClientId: '',
-      aiBaseUrl: 'https://ollama.com/api',
-      aiKey: '',
-      aiModel: 'gemma4:31b'
+      serverUrl: '',
+      supportEmail: ''
     },
     accounts: [],
     workers: [],
