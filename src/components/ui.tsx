@@ -304,18 +304,21 @@ export const FileDrop = ({ onAdd, label = 'Upload photo / design (PDF)' }: { onA
   </label>
 );
 
-/* WhatsApp pill — one URL builder (waLink) for the whole app */
-export const WhatsAppBtn = ({ phone, message, label = 'WhatsApp', disabled }: any) => {
+/* WhatsApp pill — one URL builder (waLink) for the whole app.
+   compact: inline row button (dues reminders); onOpen: hook before window.open
+   (quote cards stamp status 'sent' the moment the tap lands) */
+export const WhatsAppBtn = ({ phone, message, label = 'WhatsApp', disabled, compact, onOpen }: any) => {
   const ready = !!String(phone || '').replace(/\D/g, '') && !!message && !disabled;
   return (
     <button
       disabled={!ready}
-      onClick={() => ready && window.open(waLink(phone, message), '_blank')}
-      className={`flex items-center justify-center gap-2 py-3 rounded-2xl font-black uppercase text-sm transition active:scale-95
+      onClick={() => { if (!ready) return; if (onOpen) onOpen(); window.open(waLink(phone, message), '_blank'); }}
+      className={`flex items-center justify-center font-black uppercase transition active:scale-95
+        ${compact ? 'gap-1.5 py-1.5 px-3 rounded-xl text-[11px]' : 'gap-2 py-3 rounded-2xl text-sm'}
         ${ready ? 'bg-green-500 text-white shadow-lg' : 'bg-gray-100 text-gray-300'}`}
       title={ready ? 'Open WhatsApp' : 'No phone number saved yet'}
     >
-      <MessageCircle size={20} /> {label}
+      <MessageCircle size={compact ? 13 : 20} /> {label}
     </button>
   );
 };

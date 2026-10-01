@@ -1,4 +1,4 @@
-import { AppState, Client, Worker, LedgerEntry, monthKey, ID } from '../store';
+import { AppState, Client, Worker, LedgerEntry, monthKey, shiftMonth, today, ID } from '../store';
 
 const money0 = (n: number) => (Number.isFinite(n) ? n.toLocaleString('en-US') : 'NaN');
 
@@ -137,6 +137,51 @@ export const cashInHand = (s: AppState) =>
 export const capitalIn = (s: AppState) =>
   s.ledger.filter(l => l.kind === 'in' && l.bucket === 'capital')
     .reduce((a, l) => a + l.amount, 0);
+
+/* ---- monthly profit & stock analytics (Dashboard) ---- */
+
+/* money FROM clients in one month — owner's own capital never flatters profit */
+export const monthIn = (s: AppState, ym: string) =>
+  s.ledger.filter(l => l.kind === 'in' && l.bucket === 'client' && (l.ym ?? monthKey(l.date)) === ym)
+    .reduce((a, l) => a + l.amount, 0);
+
+/* wages + vendor payments + expenses in one month — mirrors cashInHand rules:
+   expense-bucket ledger rows are display-only, the expenses array is counted once */
+export const monthOut = (s: AppState, ym: string) =>
+  s.ledger.filter(l => l.kind === 'out' && l.bucket !== 'expense' && (l.ym ?? monthKey(l.date)) === ym)
+    .reduce((a, l) => a + l.amount, 0) + expensesTotal(s, ym);
+
+export const monthProfit = (s: AppState, ym: string) => monthIn(s, ym) - monthOut(s, ym);
+
+/* last n months ending this one, oldest first — bars on the Dashboard */
+export const monthTrend = (s: AppState, n = 6): { ym: string; in: number; out: number }[] => {
+  const out: { ym: string; in: number; out: number }[] = [];
+  let ym = today().slice(0, 7);
+  for (let i = 0; i < n; i++) {
+    out.unshift({ ym, in: monthIn(s, ym), out: monthOut(s, ym) });
+    ym = shiftMonth(ym, -1);
+  }
+  return out;
+};
+
+export const woodStockCft = (s: AppState) =>
+  s.woodLots.reduce((a, l) => a + (Number(l.cubicFeet) || 0), 0);
+
+/* whole yard nearly dry (total < 15 ft³) or any single lot under 5 ft³ */
+export const lowStockLots = (s: AppState) => {
+  if (woodStockCft(s) < 15) return s.woodLots;
+  return s.woodLots.filter(l => (Number(l.cubicFeet) || 0) < 5);
+};
+
+/* order value by stage — delivered vs still being worked on */
+export const stageValues = (s: AppState) => {
+  let done = 0, active = 0;
+  for (const o of s.orders) {
+    if (o.status === 'delivered') done += o.price;
+    else active += o.price;
+  }
+  return { done, active };
+};
 
 /* ---- consistency checks (used by the verifier) ---- */
 

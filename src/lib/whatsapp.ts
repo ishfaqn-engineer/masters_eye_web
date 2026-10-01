@@ -1,4 +1,4 @@
-import { AppState, monthLabel, orderLines } from '../store';
+import { AppState, Quote, monthLabel, orderLines, quoteTotal } from '../store';
 import * as D from './derive';
 
 const sanitize = (n: string) => n.replace(/\D/g, '');
@@ -68,6 +68,22 @@ export function vendorMessage(s: AppState, vendorId: string) {
     lots.map(l => `• ${l.type} ${l.cubicFeet} ft3 — Rs ${D.lotValue(l)}`).join('\n') +
     `\n\nTotal: Rs ${total}\nPaid: Rs ${paid}\nBalance: Rs ${due}\n\n` +
     `— ${s.settings.masterName}`;
+}
+
+/* estimate sent before any work starts — line items + validity, no balance yet */
+export function quoteMessage(s: AppState, q: Quote) {
+  const c = s.clients.find(x => x.id === q.clientId);
+  const lines = q.items
+    .map(i => `• ${i.desc} × ${i.qty} — Rs ${(Number(i.qty) || 0) * (Number(i.rate) || 0)}`)
+    .join('\n');
+  return `Assalam-o-Alaikum ${c?.name || ''},\n\n` +
+    `Estimate for your work:\n${lines}\n\n` +
+    (q.discount ? `Discount: Rs ${q.discount}\n` : '') +
+    `Total: Rs ${quoteTotal(q)}\n` +
+    `Valid for ${q.validDays} days.\n` +
+    (q.note ? `\n${q.note}\n` : '') +
+    `\nReply HAAN to confirm and I will start the work.\n\n` +
+    `— ${s.settings.masterName}, The Master's Eye`;
 }
 
 export function openWhatsApp(phone: string, message: string) {

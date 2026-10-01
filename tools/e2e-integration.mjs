@@ -708,12 +708,150 @@ if (process.env.OLLAMA_KEY) {
   });
 }
 
-/* ── step 16: the reinstall path ───────────────────────────────────────────
+/* ── step 16: quotes — estimate → WhatsApp → one-tap order ───────────────
+   Fresh reload first so the assistant overlay from step 15 can't sit on top
+   of the Orders screen. window.open is stubbed to record wa.me URLs. */
+await step(16, 'quotes: new estimate → wa.me → accept converts it to an order', async () => {
+  await page.reload({ waitUntil: 'load' });
+  await sleep(900);
+  await go('home');
+  await clickBtn({ text: 'orders' });
+  await waitFor('Orders screen', async () => (await screenName()) === 'Orders & Designs');
+
+  await clickBtn({ text: 'New Quote', exact: true });
+  await waitFor('new quote modal', async () => (await modalOpen()) && (await modalTitle()).toLowerCase().includes('quote'));
+  let r = await setNative('.fixed.inset-0 input[placeholder="Item"]', 'Main door set');
+  if (!r.ok) throw new Error('quote Item input missing');
+  r = await setNative('.fixed.inset-0 input[placeholder="Qty"]', '2');
+  if (!r.ok) throw new Error('quote Qty input missing');
+  r = await setNative('.fixed.inset-0 input[placeholder="Rate"]', '500');
+  if (!r.ok) throw new Error('quote Rate input missing');
+  const preview = (await modalText()).replace(/\s+/g, ' ');
+  if (!preview.includes('Rs 1,000')) throw new Error('modal live total is not Rs 1,000: ' + preview.slice(-180));
+  await clickBtn({ text: 'Save', exact: true, scope: '.fixed.inset-0' });
+  await waitFor('quote card showing Rs 1,000', async () => !(await modalOpen()) && (await bodyText()).includes('Rs 1,000'));
+
+  await ev(() => {
+    window.__opened = [];
+    window.open = (u) => { window.__opened.push(String(u)); return null; };
+  });
+  await clickBtn({ text: 'Send quote', nth: 0 });
+  const url = await waitFor('wa.me link from Send quote', async () => {
+    const u = await ev(() => (window.__opened || [])[0] || '');
+    return u || null;
+  });
+  if (!url.startsWith('https://wa.me/923001234567')) throw new Error('unexpected wa.me url: ' + url);
+  const dec = decodeURIComponent(url);
+  if (!dec.includes('Main door set') || !dec.includes('Rs 1000')) {
+    throw new Error('quote message wrong: ' + dec.slice(0, 220));
+  }
+  await waitFor('quote status stored as sent', async () =>
+    (await ev(() => JSON.parse(localStorage.getItem('masters-eye-v2')).quotes[0].status)) === 'sent');
+
+  const before = await countOrderCards();
+  await clickBtn({ text: 'Accept', nth: 0 });
+  await waitFor('quote accepted with orderId', async () => {
+    const q = await ev(() => JSON.parse(localStorage.getItem('masters-eye-v2')).quotes[0]);
+    return q.status === 'accepted' && !!q.orderId;
+  });
+  const after = await countOrderCards();
+  if (after !== before + 1) throw new Error(`order cards ${before} → ${after}, expected +1`);
+  const txt = await bodyText();
+  if (!txt.includes('₹1,000')) throw new Error('converted order card does not show ₹1,000');
+  if (!txt.toLowerCase().includes('order made')) throw new Error('quote chip did not flip to "order made"');
+  return `2×Rs500 quote → wa.me/923001234567 (Main door set, Rs 1000) → Accept stamped orderId, order card ₹1,000`;
+});
+
+/* ── step 17: dashboard analytics + one-tap dues reminders ─────────────── */
+await step(17, 'dashboard: month P/L, 6-month trend, remind-dues card', async () => {
+  await go('home');
+  await waitFor('dashboard', async () => (await screenName()) === "Master's Eye");
+
+  // same maths as derive.ts, computed from storage so the step never hardcodes
+  const exp = await ev(() => {
+    const s = JSON.parse(localStorage.getItem('masters-eye-v2'));
+    const pad = n => String(n).padStart(2, '0');
+    const d = new Date();
+    const ym = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+    const mfmt = n => n.toLocaleString('en-US');
+    const mIn = s.ledger.filter(l => l.kind === 'in' && l.bucket === 'client' && (l.ym ?? String(l.date).slice(0, 7)) === ym)
+      .reduce((a, l) => a + l.amount, 0);
+    const mOut = s.ledger.filter(l => l.kind === 'out' && l.bucket !== 'expense' && (l.ym ?? String(l.date).slice(0, 7)) === ym)
+      .reduce((a, l) => a + l.amount, 0)
+      + s.expenses.filter(e => String(e.date).slice(0, 7) === ym).reduce((a, e) => a + e.amount, 0);
+    const clientDue = id => {
+      const c = s.clients.find(x => x.id === id);
+      const priced = s.orders.filter(o => o.clientId === id && o.price > 0);
+      const total = priced.length ? priced.reduce((a, o) => a + o.price, 0) : (c ? c.totalOrderValue : 0);
+      const paid = s.ledger.filter(l => l.kind === 'in' && l.bucket === 'client' && l.refId === id)
+        .reduce((a, l) => a + l.amount, 0);
+      return total - paid;
+    };
+    const dueClient = s.clients.find(c => clientDue(c.id) > 0);
+    const stock = s.woodLots.reduce((a, l) => a + l.cubicFeet, 0);
+    return {
+      mIn: mfmt(mIn), mOut: mfmt(mOut), mProfit: mfmt(mIn - mOut),
+      clientName: dueClient ? dueClient.name : '',
+      clientDue: dueClient ? mfmt(clientDue(dueClient.id)) : '',
+      stock: mfmt(stock),
+      low: s.woodLots.some(l => l.cubicFeet < 5),
+    };
+  });
+
+  // CSS uppercase shows up in innerText — compare case-insensitively
+  const txt = (await bodyText()).toLowerCase();
+  if (!txt.includes('this month')) throw new Error('P/L card missing');
+  if (!txt.includes('last 6 months')) throw new Error('trend card missing');
+  if (!txt.includes('wood stock')) throw new Error('stock card missing');
+  if (!txt.includes(exp.mIn)) throw new Error(`month received ${exp.mIn} not on dashboard`);
+  if (!txt.includes(exp.mOut)) throw new Error(`month spent ${exp.mOut} not on dashboard`);
+  if (!txt.includes(exp.mProfit)) throw new Error(`month profit ${exp.mProfit} not on dashboard`);
+  if (!txt.includes(exp.stock)) throw new Error(`stock total ${exp.stock} not on dashboard`);
+  if (!txt.includes('remind dues')) throw new Error('remind card missing despite open balances');
+  if (!exp.clientName || !txt.includes(exp.clientName.toLowerCase()) || !txt.includes(exp.clientDue)) {
+    throw new Error(`dues row for ${exp.clientName} (${exp.clientDue}) not on dashboard`);
+  }
+  if (exp.low) throw new Error('low-stock alert showing on healthy stock');
+
+  await ev(() => {
+    window.__opened = [];
+    window.open = (u) => { window.__opened.push(String(u)); return null; };
+  });
+  await clickBtn({ text: 'Remind', nth: 0 });
+  const url = await waitFor('remind wa.me url', async () => {
+    const u = await ev(() => (window.__opened || [])[0] || '');
+    return u || null;
+  });
+  if (!url.startsWith('https://wa.me/92')) throw new Error('bad remind url: ' + url);
+  const dec = decodeURIComponent(url);
+  if (!dec.includes(exp.clientName)) throw new Error('remind message misses client name: ' + dec.slice(0, 160));
+  if (!dec.includes(exp.clientDue.replace(/,/g, ''))) throw new Error('remind message misses balance: ' + dec.slice(0, 220));
+  return `P/L ${exp.mIn}/${exp.mOut}/${exp.mProfit} + stock ${exp.stock} verified; Remind → wa.me carries ${exp.clientName} Rs ${exp.clientDue}`;
+});
+
+/* ── step 18: low-stock alert (mutate a lot, reload, alert must fire) ──── */
+await step(18, 'dashboard: dry lot triggers the low-stock alert', async () => {
+  if ((await bodyText()).toLowerCase().includes('low stock')) throw new Error('alert already showing before mutation');
+  await ev(() => {
+    const SK = 'masters-eye-v2';
+    const s = JSON.parse(localStorage.getItem(SK));
+    s.woodLots = s.woodLots.map(l => l.id === 'l3' ? { ...l, cubicFeet: 3 } : l);
+    localStorage.setItem(SK, JSON.stringify(s));
+  });
+  await page.reload({ waitUntil: 'load' });
+  await sleep(900);
+  await waitFor('low-stock alert after reload', async () => (await bodyText()).toLowerCase().includes('low stock'));
+  const txt = (await bodyText()).toLowerCase();
+  if (!txt.includes('oak')) throw new Error('alert does not name the dry Oak lot');
+  return 'l3 (Oak) cut to 3 ft³ → amber alert appears and names it';
+});
+
+/* ── step 19: the reinstall path ───────────────────────────────────────────
    Wipe both localStorage keys (what deleting the app does), boot to the
    blank first-run screen, then restore from a MOCKED Google Drive: GIS stub
    + Drive REST fixtures. The restored payload carries its own accounts, so
    the old master PIN must open the app again with the data intact. */
-await step(16, 'reinstall: wipe app → Drive restore (mocked) → old logins + data back', async () => {
+await step(19, 'reinstall: wipe app → Drive restore (mocked) → old logins + data back', async () => {
   const accId = 'accRestored1';
   // must match hashPin(): SHA-256(`${salt}:${pin}`)
   const pinHash = crypto.createHash('sha256').update(`${accId}:1234`).digest('hex');

@@ -152,13 +152,13 @@ export const SpecSummary = ({ specs }: { specs?: OrderSpecs }) => {
             <div key={l.id} className="flex items-center gap-1.5 text-[11px] font-bold text-gray-600 leading-snug">
               {icon}
               <span className="font-black text-gray-800">{l.qty}×</span>
-              <span className="truncate">{l.label || 'Item'} {l.widthIn}"×{l.heightIn}"</span>
-              <span className="text-wood font-black shrink-0">· {l.woodCft} cft</span>
+              <span className="truncate">{l.label || 'Item'}{l.widthIn > 0 && l.heightIn > 0 ? ` ${l.widthIn}"×${l.heightIn}"` : ''}</span>
+              {l.woodCft > 0 ? <span className="text-wood font-black shrink-0">· {l.woodCft} cft</span> : null}
             </div>
           ))}
         </div>
       ) : null)}
-      {lines.length > 0 && (
+      {specWoodTotal(s) > 0 && (
         <div className="flex items-center gap-1.5 text-[11px] font-black text-wood">
           <TreePine size={13} /> Total wood required: {specWoodTotal(s)} cft
         </div>

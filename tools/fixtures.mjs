@@ -59,6 +59,9 @@ export function demoSeed() {
         { id: 'led3', kind: 'out', bucket: 'vendor', refId: 'l2', amount: 150000, date: t, note: 'Part payment' },
         { id: 'led4', kind: 'out', bucket: 'vendor', refId: 'l3', amount: 161500, date: t, note: 'Full payment' },
       ],
+      quotes: [
+        { id: 'q1', clientId: 'c1', date: t, items: [{ id: 'qi1', desc: 'Wardrobe 6ft', qty: 1, rate: 65000 }], discount: 5000, note: 'Includes polish', validDays: 7, status: 'draft' },
+      ],
       lastSync: null,
     }));
   } catch { /* storage unavailable — the run simply starts blank */ }

@@ -203,6 +203,27 @@ export type Account = {
   photo?: string;
 };
 
+export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'declined';
+
+export type QuoteItem = { id: ID; desc: string; qty: number; rate: number };
+
+/** price estimate sent before any work starts — "Accept" stamps orderId and
+    turns it into a real pending order, so a quote is never retyped */
+export type Quote = {
+  id: ID;
+  clientId: ID;
+  date: string;
+  items: QuoteItem[];
+  discount: number;
+  note: string;
+  validDays: number;
+  status: QuoteStatus;
+  orderId?: ID;
+};
+
+export const quoteTotal = (q: Pick<Quote, 'items' | 'discount'>) =>
+  Math.max(0, q.items.reduce((a, i) => a + (Number(i.qty) || 0) * (Number(i.rate) || 0), 0) - (Number(q.discount) || 0));
+
 export type AppState = {
   v: 2;
   settings: Settings;
@@ -215,6 +236,7 @@ export type AppState = {
   orders: OrderItem[];
   expenses: Expense[];
   ledger: LedgerEntry[];
+  quotes: Quote[];
   lastSync: string | null;
 };
 
@@ -304,6 +326,7 @@ export function emptyState(): AppState {
       { id: 'led3', kind: 'out', bucket: 'vendor', refId: 'l2', amount: 150000, date: t, note: 'Part payment' },
       { id: 'led4', kind: 'out', bucket: 'vendor', refId: 'l3', amount: 161500, date: t, note: 'Full payment' },
     ],
+    quotes: [],
     lastSync: null,
   };
 }
@@ -353,6 +376,27 @@ export function normalizeState(parsed: any, base: AppState = emptyState()): AppS
         .filter((o: any) => o && typeof o.id === 'string' && typeof o.clientId === 'string')
         .map((o: any) => ({ ...o, files: Array.isArray(o.files) ? o.files : [], specs: fixSpecs(o) }))
     : [];
+  const STATUSES = ['draft', 'sent', 'accepted', 'declined'];
+  const quotes = Array.isArray(parsed?.quotes)
+    ? parsed.quotes
+        .filter((q: any) => q && typeof q.id === 'string' && Array.isArray(q.items))
+        .map((q: any) => ({
+          ...q,
+          clientId: typeof q.clientId === 'string' ? q.clientId : '',
+          date: typeof q.date === 'string' ? q.date : '',
+          items: q.items
+            .filter((i: any) => i && typeof i === 'object')
+            .map((i: any, k: number) => ({
+              id: typeof i.id === 'string' ? i.id : 'qi' + k + Math.random().toString(36).slice(2, 6),
+              desc: typeof i.desc === 'string' ? i.desc : '',
+              qty: Math.max(0, Number(i.qty) || 0),
+              rate: Math.max(0, Number(i.rate) || 0),
+            })),
+          discount: Math.max(0, Number(q.discount) || 0),
+          validDays: Math.max(1, Number(q.validDays) || 7),
+          status: STATUSES.includes(q.status) ? q.status : 'draft',
+        }))
+    : [];
   return {
     ...base,
     ...parsed,
@@ -367,6 +411,7 @@ export function normalizeState(parsed: any, base: AppState = emptyState()): AppS
     expenses: Array.isArray(parsed?.expenses) ? parsed.expenses : [],
     ledger,
     orders,
+    quotes,
   } as AppState;
 }
 
@@ -415,6 +460,7 @@ export function blankState(): AppState {
     orders: [],
     expenses: [],
     ledger: [],
+    quotes: [],
     lastSync: null,
   };
 }

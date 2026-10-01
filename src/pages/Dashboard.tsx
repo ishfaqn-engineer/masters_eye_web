@@ -1,8 +1,9 @@
 import React from 'react';
-import { Users, Camera, ShoppingCart, TreePine, Wallet, Package, RefreshCw, Settings as Cog } from 'lucide-react';
-import { AppState, today } from '../store';
+import { Users, Camera, ShoppingCart, TreePine, Wallet, Package, RefreshCw, Settings as Cog, AlertTriangle } from 'lucide-react';
+import { AppState, today, monthLabel } from '../store';
 import * as D from '../lib/derive';
-import { money, BigButton } from '../components/ui';
+import { money, BigButton, WhatsAppBtn } from '../components/ui';
+import { clientMessage, vendorMessage, wageMessage } from '../lib/whatsapp';
 
 type Props = { state: AppState; navigate: (p: string) => void; sync: () => void; syncing: boolean };
 
@@ -12,6 +13,23 @@ export default function Dashboard({ state, navigate, sync, syncing }: Props) {
   const vendorDebt = D.totalVendorDebt(state);
   const wages = D.crewWagesRemaining(state, ym);
   const inHand = D.cashInHand(state);
+
+  /* month profit & stock analytics */
+  const mIn = D.monthIn(state, ym);
+  const mOut = D.monthOut(state, ym);
+  const mProfit = D.monthProfit(state, ym);
+  const trend = D.monthTrend(state, 6);
+  const maxV = Math.max(1, ...trend.flatMap(t => [t.in, t.out]));
+  const stages = D.stageValues(state);
+  const stock = D.woodStockCft(state);
+  const lowLots = D.lowStockLots(state);
+  const shortMonth = (k: string) => new Date(+k.slice(0, 4), +k.slice(5, 7) - 1, 1).toLocaleString('en', { month: 'short' });
+
+  /* dues reminder rows — clients, suppliers, crew in one place */
+  const dueClients = state.clients.map(c => ({ c, d: D.clientDue(state, c) })).filter(x => x.d > 0);
+  const dueVendors = state.vendors.map(v => ({ v, d: D.vendorDue(state, v.id) })).filter(x => x.d > 0);
+  const dueWages = state.workers.map(w => ({ w, d: D.wageRemaining(state, w.id, ym) })).filter(x => x.d > 0);
+  const hasDues = dueClients.length + dueVendors.length + dueWages.length > 0;
 
   return (
     <div className="p-4 space-y-4">
@@ -23,6 +41,51 @@ export default function Dashboard({ state, navigate, sync, syncing }: Props) {
           <div className="bg-white/15 rounded-xl p-2"><div className="text-lg font-black">{state.orders.length}</div><div className="text-[9px] uppercase font-bold opacity-70">Orders</div></div>
           <div className="bg-white/15 rounded-xl p-2"><div className="text-lg font-black">{state.workers.length + 1}</div><div className="text-[9px] uppercase font-bold opacity-70">Crew</div></div>
           <div className="bg-white/15 rounded-xl p-2"><div className="text-lg font-black">{state.woodLots.length}</div><div className="text-[9px] uppercase font-bold opacity-70">Lots</div></div>
+        </div>
+      </div>
+
+      {/* this month: received vs spent vs what's actually left */}
+      <div className="bg-white rounded-3xl shadow p-4">
+        <div className="flex items-baseline justify-between mb-3">
+          <div className="font-black uppercase text-sm">This month</div>
+          <div className="text-[11px] font-bold text-gray-400">{monthLabel(ym)}</div>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="bg-green-50 rounded-xl p-2">
+            <div className="text-lg font-black text-green-600 tabular-nums">₹{money(mIn)}</div>
+            <div className="text-[9px] font-black uppercase text-green-700/70">received</div>
+          </div>
+          <div className="bg-red-50 rounded-xl p-2">
+            <div className="text-lg font-black text-red-600 tabular-nums">₹{money(mOut)}</div>
+            <div className="text-[9px] font-black uppercase text-red-700/70">spent</div>
+          </div>
+          <div className={`${mProfit < 0 ? 'bg-red-50' : 'bg-gray-50'} rounded-xl p-2`}>
+            <div className={`text-lg font-black tabular-nums ${mProfit < 0 ? 'text-red-600' : 'text-green-600'}`}>₹{money(mProfit)}</div>
+            <div className="text-[9px] font-black uppercase text-gray-500">profit</div>
+          </div>
+        </div>
+        <div className="text-[11px] font-bold text-gray-400 mt-2 text-center">
+          ₹{money(stages.done)} delivered · ₹{money(stages.active)} in progress
+        </div>
+      </div>
+
+      {/* six-month in/out bars */}
+      <div className="bg-white rounded-3xl shadow p-4">
+        <div className="font-black uppercase text-sm mb-3">Last 6 months</div>
+        <div className="grid grid-cols-6 gap-2">
+          {trend.map(t => (
+            <div key={t.ym} className="flex flex-col items-center gap-1">
+              <div className="flex items-end justify-center gap-1 h-16 w-full">
+                <div className="w-3 rounded-t bg-green-500" style={{ height: `${Math.max(t.in > 0 ? 4 : 2, (t.in / maxV) * 100)}%` }} />
+                <div className="w-3 rounded-t bg-red-300" style={{ height: `${Math.max(t.out > 0 ? 4 : 2, (t.out / maxV) * 100)}%` }} />
+              </div>
+              <div className="text-[9px] font-black uppercase text-gray-400">{shortMonth(t.ym)}</div>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-center gap-4 mt-2 text-[10px] font-black uppercase text-gray-400">
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-500" /> received</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-300" /> spent</span>
         </div>
       </div>
 
@@ -50,6 +113,62 @@ export default function Dashboard({ state, navigate, sync, syncing }: Props) {
           <div className={`text-xl font-black whitespace-nowrap tabular-nums ${inHand < 0 ? 'text-red-600' : 'text-green-600'}`}>₹{money(inHand)}</div>
         </div>
       </div>
+
+      {/* yard stock + dry-lot alert */}
+      <div className="bg-white rounded-3xl shadow p-4">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="bg-wood/10 p-2 rounded-xl"><TreePine size={20} className="text-wood" /></div>
+          <div className="min-w-0">
+            <div className="font-black uppercase text-sm">Wood stock</div>
+            <div className="text-[11px] font-bold text-gray-400">{stock.toLocaleString('en-US')} ft³ across {state.woodLots.length} lots</div>
+          </div>
+        </div>
+        {lowLots.length > 0 && (
+          <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-2.5">
+            <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+            <div className="text-[11px] font-black uppercase">
+              Low stock: {lowLots.map(l => `${l.type} ${l.cubicFeet} ft³`).join(' · ')}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* one-tap WhatsApp reminders for every open balance */}
+      {hasDues && (
+        <div className="bg-white rounded-3xl shadow p-4">
+          <div className="font-black uppercase text-sm">Remind dues</div>
+          <div className="text-[11px] font-bold text-gray-400 mb-1">one tap opens WhatsApp with the exact balance</div>
+          <div className="divide-y divide-gray-100">
+            {dueClients.map(({ c, d }) => (
+              <div key={'c' + c.id} className="flex items-center justify-between gap-3 py-2">
+                <div className="min-w-0">
+                  <div className="font-black text-sm truncate">{c.name}</div>
+                  <div className="text-[11px] font-bold text-gray-400">client · ₹{money(d)} due</div>
+                </div>
+                <WhatsAppBtn compact phone={c.phone} message={clientMessage(state, c.id)} label="Remind" />
+              </div>
+            ))}
+            {dueVendors.map(({ v, d }) => (
+              <div key={'v' + v.id} className="flex items-center justify-between gap-3 py-2">
+                <div className="min-w-0">
+                  <div className="font-black text-sm truncate">{v.name}</div>
+                  <div className="text-[11px] font-bold text-gray-400">wood supplier · ₹{money(d)} due</div>
+                </div>
+                <WhatsAppBtn compact phone={v.phone} message={vendorMessage(state, v.id)} label="Remind" />
+              </div>
+            ))}
+            {dueWages.map(({ w, d }) => (
+              <div key={'w' + w.id} className="flex items-center justify-between gap-3 py-2">
+                <div className="min-w-0">
+                  <div className="font-black text-sm truncate">{w.name}</div>
+                  <div className="text-[11px] font-bold text-gray-400">wages · ₹{money(d)} this month</div>
+                </div>
+                <WhatsAppBtn compact phone={w.phone} message={wageMessage(state, w.id, ym)} label="Remind" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         <BigButton icon={Users} label="Team & Attendance" color="bg-blue-600" onClick={() => navigate('team')} />
