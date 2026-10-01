@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Lock, KeyRound, ArrowRight, CloudDownload } from 'lucide-react';
-import { AppState, Account, Role, blankState, normalizeState } from '../store';
+import { AppState, Account, Role, blankState, normalizeState, effectiveCid } from '../store';
 import { makeAccount, verifyPin } from '../lib/auth';
-import { drivePull, driveFileName } from '../lib/drive';
+import { drivePull, driveFileName, everConnected } from '../lib/drive';
 import { Field, inputCls } from './ui';
 
 type Props = { state: AppState; setState: (s: AppState) => void; onLogin: (accountId: string) => void };
@@ -19,13 +19,23 @@ const SetupView = ({ state, setState, onLogin }: Props) => {
   const [pin2, setPin2] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // reinstall restore — google client id survives only if baked or retyped here
-  const [cid, setCid] = useState(state.settings.googleClientId);
+  // reinstall restore — the effective id comes from Settings or the baked default
+  const [cid, setCid] = useState(() => effectiveCid(state));
   const [restoring, setRestoring] = useState(false);
   const [msg, setMsg] = useState('');
 
   const rememberCid = (clientId: string) =>
     setState({ ...state, settings: { ...state.settings, googleClientId: clientId } });
+
+  const applyRestore = (data: any, clientId: string) => {
+    const next = normalizeState(data, blankState());
+    // keep the id known on this device even if the backup predates it
+    setState({
+      ...next,
+      settings: { ...next.settings, googleClientId: next.settings.googleClientId || clientId },
+    });
+    // accounts are back → LoginGate switches straight to the account picker
+  };
 
   const restore = async () => {
     const clientId = cid.trim();
@@ -43,18 +53,33 @@ const SetupView = ({ state, setState, onLogin }: Props) => {
       } else if (res.data?.v !== 2) {
         setMsg("Ye Drive copy Master's Eye v2 backup nahi hai.");
       } else {
-        const next = normalizeState(res.data, blankState());
-        // keep the id typed on this screen even if the backup predates it
-        setState({
-          ...next,
-          settings: { ...next.settings, googleClientId: next.settings.googleClientId || clientId },
-        });
-        // accounts are back → LoginGate switches straight to the account picker
+        applyRestore(res.data, clientId);
       }
     } finally {
       setRestoring(false);
     }
   };
+
+  /* silent restore — possible only when THIS install previously granted
+     Drive access (rare on the first-run screen: a wipe kills the flag too).
+     A genuine reinstall always lands on the one-tap button below instead. */
+  useEffect(() => {
+    const clientId = effectiveCid(state);
+    if (!clientId || !everConnected()) return;
+    let dead = false;
+    (async () => {
+      setRestoring(true);
+      setMsg('Google backup dhoondh rahe hain…');
+      try {
+        const res = await drivePull<any>(clientId, driveFileName());
+        if (dead) return;
+        if (res.ok && res.data?.v === 2) applyRestore(res.data, clientId);
+        else { setMsg(''); setRestoring(false); }
+      } catch { if (!dead) { setMsg(''); setRestoring(false); } }
+    })();
+    return () => { dead = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const create = async () => {
     if (!/^\d{4,6}$/.test(pin)) { alert('PIN must be 4 to 6 digits.'); return; }
@@ -92,26 +117,29 @@ const SetupView = ({ state, setState, onLogin }: Props) => {
         </button>
       </div>
 
-      {/* reinstall path — no local data survives deleting the app, but the
-          Drive copy holds every record AND every login, so one Google
-          sign-in brings the whole organisation back */}
+      {/* reinstall path — deleting the app kills local storage, but the Drive
+          copy holds every record AND every login: one Google sign-in brings
+          the whole organisation back, like restoring any other app */}
       <div className="bg-white/10 border border-white/20 rounded-3xl p-4 w-full max-w-sm mt-4">
         <div className="flex items-center gap-2 font-black uppercase text-xs mb-1">
           <CloudDownload size={15} /> Reinstalled the app?
         </div>
         <div className="text-[11px] font-bold opacity-70 mb-2">
-          Google account se sign-in karein — saare records aur logins wapas aa jayenge, phir apne PIN se kholein.
+          Naya phone ya fresh install — ek tap, saara data aur logins wapas, phir apne PIN se kholein.
         </div>
-        <input
-          value={cid}
-          onChange={e => setCid(e.target.value)}
-          placeholder="Google Client ID (one-time)"
-          className="w-full border-2 border-white/20 bg-white/5 rounded-xl p-2.5 text-[11px] font-bold text-white placeholder-white/40 outline-none focus:border-white/50 mb-2"
-          autoComplete="off"
-        />
+        {!cid.trim() && (
+          <input
+            value={cid}
+            onChange={e => setCid(e.target.value)}
+            placeholder="Google Client ID (one-time)"
+            className="w-full border-2 border-white/20 bg-white/5 rounded-xl p-2.5 text-[11px] font-bold text-white placeholder-white/40 outline-none focus:border-white/50 mb-2"
+            autoComplete="off"
+          />
+        )}
         <button onClick={restore} disabled={restoring}
-          className="w-full py-3 rounded-2xl bg-blue-600 text-white font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2 disabled:opacity-60">
-          <CloudDownload size={16} /> {restoring ? 'Restoring…' : 'Restore from Google Drive'}
+          className="w-full py-3 rounded-2xl bg-white text-gray-900 font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2 disabled:opacity-60">
+          <span className="w-5 h-5 rounded-full bg-white border border-gray-300 flex items-center justify-center text-[13px] font-black text-blue-600">G</span>
+          {restoring ? 'Restoring…' : 'Sign in with Google — restore everything'}
         </button>
         {msg && <div className="text-[11px] font-bold text-amber-300 mt-2">{msg}</div>}
       </div>

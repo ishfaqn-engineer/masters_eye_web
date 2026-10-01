@@ -12,6 +12,18 @@ let accessToken: string | null = null;
 let tokenPromise: Promise<string> | null = null;
 let gisLoaded: Promise<void> | null = null;
 
+/* set once the owner has granted Drive access on THIS install — lets the app
+   silently resume its cloud session on later boots, and tells the first-run
+   screen when a background restore attempt is even possible (a fresh install
+   never has this flag: consent died with the old app data, so the owner gets
+   one clear "Sign in with Google" tap instead of a mystery popup). */
+const GF_KEY = 'masters-eye-gdrive';
+export const everConnected = () => {
+  try { return localStorage.getItem(GF_KEY) === '1'; } catch { return false; }
+};
+const markConnected = () => { try { localStorage.setItem(GF_KEY, '1'); } catch { /* private mode */ } };
+const clearConnected = () => { try { localStorage.removeItem(GF_KEY); } catch { /* private mode */ } };
+
 function loadGis(): Promise<void> {
   if (!gisLoaded) {
     gisLoaded = new Promise((res, rej) => {
@@ -44,6 +56,7 @@ export async function connectGoogle(clientId: string): Promise<string> {
             return;
           }
           accessToken = String(resp.access_token);
+          markConnected();
           res(accessToken);
         },
         error_callback: (err: any) => {
@@ -62,10 +75,27 @@ export async function connectGoogle(clientId: string): Promise<string> {
 
 export const isConnected = () => !!accessToken;
 
+/* resume a previously-granted session without ever rejecting — the caller
+   treats "false" as "not signed in, stay quiet". Loads GIS once per session;
+   with cached consent the iframe re-grants silently, without it the error
+   callback fires and we simply report false. */
+export async function silentConnect(clientId: string): Promise<boolean> {
+  if (!clientId.trim()) return false;
+  if (accessToken) return true;
+  try {
+    await connectGoogle(clientId);
+    return !!accessToken;
+  } catch {
+    tokenPromise = null;
+    return false;
+  }
+}
+
 export function disconnectGoogle() {
   const token = accessToken; // grab before clearing — revoke must get the real token
   accessToken = null;
   tokenPromise = null;
+  clearConnected();
   try {
     if (token) window.google?.accounts?.oauth2?.revoke?.(token, () => { /* noop */ });
   } catch { /* best effort */ }

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MessageCircle, Trash2, RefreshCw, Phone, Pencil, Upload, Users, HardDrive, Info, LogOut, KeyRound, Cloud, Plus, ShieldCheck, Sparkles } from 'lucide-react';
-import { AppState, Account, Role, blankState, normalizeState, Worker } from '../store';
+import { AppState, Account, Role, blankState, normalizeState, Worker, effectiveCid } from '../store';
 import { money, Modal, Field, inputCls, PhotoInput, MoneyField, StatCard, WhatsAppBtn } from '../components/ui';
 import { clearFiles } from '../lib/files';
 import { hashPin, makeAccount, verifyPin } from '../lib/auth';
@@ -139,7 +139,7 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
   const saveClientId = () => setState({ ...state, settings: { ...state.settings, googleClientId: gClientId.trim() } });
 
   const doDrivePush = async () => {
-    const cid = gClientId.trim() || state.settings.googleClientId;
+    const cid = gClientId.trim() || effectiveCid(state);
     if (!cid) { alert('Enter your Google Client ID first (see help below).'); return; }
     setDriveMsg('Connecting to Google…');
     saveClientId();
@@ -148,7 +148,7 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
   };
 
   const doDrivePull = async () => {
-    const cid = gClientId.trim() || state.settings.googleClientId;
+    const cid = gClientId.trim() || effectiveCid(state);
     if (!cid) { alert('Enter your Google Client ID first (see help below).'); return; }
     if (!confirm('Replace ALL current data with the SHARED copy from Google Drive?\n\nIf another device pushed newer records after this device\'s last backup, this device\'s newer changes will be lost.')) return;
     setDriveMsg('Downloading from Google…');
@@ -386,9 +386,12 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
           <b>How to get the ID (once):</b> console.cloud.google.com → APIs &amp; Services → Credentials →
           Create OAuth client ID → Web application → add these to <i>Authorized JavaScript origins</i>:
           <b> https://appassets.androidplatform.net</b> (app) and <b>http://localhost:5173</b> (web dev).
-          Paste the ID above and press Save ID. Fresh reinstall? The first-run screen has a
-          Restore button — type the same ID there once and your records + logins come back.
-          Without an ID, use <b>Backup now</b> (file backup) instead.
+          Paste the ID above and press Save ID. Once you have pressed Backup to
+          Drive (or Restored) once, backup runs <b>automatically after every
+          change</b> — like other apps' cloud sync. Fresh reinstall? The
+          first-run screen shows <b>Sign in with Google</b> — one tap and your
+          records + logins come back. Without an ID, use <b>Backup now</b> (file
+          backup) instead.
         </div>
       </div>
 

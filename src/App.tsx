@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Camera, Users, Wallet, Settings as Cog, Home, LogOut } from 'lucide-react';
-import { AppState, loadState, saveState, syncToDrive, Account } from './store';
+import { AppState, loadState, saveState, syncToDrive, Account, effectiveCid } from './store';
 import { readSession, writeSession, clearSession } from './lib/auth';
+import { drivePush, driveFileName, isConnected, silentConnect, everConnected } from './lib/drive';
 import { Header } from './components/ui';
 import LoginGate from './components/LoginGate';
 import Dashboard from './pages/Dashboard';
@@ -40,6 +41,44 @@ export default function App() {
   const [session, setSession] = useState<string | null>(() => readSession());
 
   useEffect(() => { saveState(state); }, [state]);
+
+  /* ── cloud auto-backup (the "other apps" behaviour) ─────────────────────
+     Once Google has been connected on this install, every boot silently
+     resumes the session and re-pushes the latest state; every change after
+     that re-pushes on a short debounce. Deinstalling the phone app doesn't
+     touch this copy — reinstalling pulls it straight back. */
+  useEffect(() => {
+    const cid = effectiveCid(state);
+    if (!cid) return;
+    // only worth attempting when a grant could exist: previously connected,
+    // or an owner-saved Client ID from the old (pre-flag) builds
+    if (!everConnected() && !state.settings.googleClientId) return;
+    let dead = false;
+    silentConnect(cid).then(ok => {
+      if (dead || !ok) return;
+      drivePush(cid, driveFileName(), state).catch(() => { /* offline */ });
+    });
+    return () => { dead = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!isConnected()) return;
+    const cid = effectiveCid(state);
+    if (!cid) return;
+    const t = setTimeout(() => { drivePush(cid, driveFileName(), state).catch(() => { /* offline */ }); }, 8000);
+    return () => clearTimeout(t);
+  }, [state]);
+
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState !== 'hidden' || !isConnected()) return;
+      const cid = effectiveCid(state);
+      if (cid) drivePush(cid, driveFileName(), state).catch(() => { /* offline */ });
+    };
+    document.addEventListener('visibilitychange', onHide);
+    return () => document.removeEventListener('visibilitychange', onHide);
+  }, [state]);
 
   const setState = (s: AppState) => setStateRaw(s);
 

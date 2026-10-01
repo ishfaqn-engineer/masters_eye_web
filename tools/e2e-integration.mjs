@@ -787,7 +787,7 @@ await step(16, 'reinstall: wipe app → Drive restore (mocked) → old logins + 
     // type the Client ID once (fresh install has no settings) and restore
     const typed = await setNative('input[placeholder^="Google Client ID"]', 'test-id.apps.googleusercontent.com');
     if (!typed.ok) throw new Error('Client ID input not found on the setup screen');
-    await clickBtn({ text: 'Restore from Google Drive' });
+    await clickBtn({ text: 'Sign in with Google' });
     await waitFor('account picker showing "Restored Master"', async () => (await accountButtons()).some(t => t.toLowerCase().includes('restored master')), 15000);
 
     // the OLD pin still opens the account

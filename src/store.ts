@@ -2,6 +2,15 @@ export type ID = string;
 
 import { saveBlob } from './lib/native';
 
+/* Google OAuth Client ID baked into the build (client IDs are public by
+   design — they identify the app, never authenticate anyone). A per-device
+   Settings value overrides it. This is what lets a FRESH INSTALL sign in and
+   pull its data back without typing anything. */
+export const DEFAULT_GOOGLE_CLIENT_ID = '';
+
+export const effectiveCid = (s: AppState): string =>
+  ((s?.settings?.googleClientId) || DEFAULT_GOOGLE_CLIENT_ID).trim();
+
 export type Worker = { id: ID; name: string; photo: string; rate: number; phone?: string };
 
 export type AttendanceDay = {
