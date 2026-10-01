@@ -384,9 +384,11 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
         {driveMsg && <div className="text-xs font-black mt-2 text-center text-gray-600">{driveMsg}</div>}
         <div className="mt-3 bg-gray-50 rounded-xl p-3 text-[10px] font-bold text-gray-500 leading-relaxed">
           <b>How to get the ID (once):</b> console.cloud.google.com → APIs &amp; Services → Credentials →
-          Create OAuth client ID → Web application → add this page's address to
-          <i> Authorized JavaScript origins</i>. Paste the ID above and press Save ID.
-          Without it, use <b>Backup now</b> (file backup) instead.
+          Create OAuth client ID → Web application → add these to <i>Authorized JavaScript origins</i>:
+          <b> https://appassets.androidplatform.net</b> (app) and <b>http://localhost:5173</b> (web dev).
+          Paste the ID above and press Save ID. Fresh reinstall? The first-run screen has a
+          Restore button — type the same ID there once and your records + logins come back.
+          Without an ID, use <b>Backup now</b> (file backup) instead.
         </div>
       </div>
 

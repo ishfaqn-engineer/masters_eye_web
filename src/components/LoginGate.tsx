@@ -1,19 +1,60 @@
 import React, { useState } from 'react';
-import { Lock, KeyRound, ArrowRight } from 'lucide-react';
-import { AppState, Account, Role } from '../store';
+import { Lock, KeyRound, ArrowRight, CloudDownload } from 'lucide-react';
+import { AppState, Account, Role, blankState, normalizeState } from '../store';
 import { makeAccount, verifyPin } from '../lib/auth';
+import { drivePull, driveFileName } from '../lib/drive';
 import { Field, inputCls } from './ui';
 
 type Props = { state: AppState; setState: (s: AppState) => void; onLogin: (accountId: string) => void };
 
 const roleLabel: Record<Role, string> = { master: 'Master', vendor: 'Vendor', team: 'Team member', client: 'Client' };
 
-/* First-run setup: create the master's PIN. Shown only when accounts is empty. */
+/* First-run setup: create the master's PIN. Shown only when accounts is empty.
+   Also the REINSTALL path: a wiped phone has no logins left, so this screen
+   offers "restore from Google Drive" — sign in once, the old accounts and every
+   record come back, then log in with your usual PIN. */
 const SetupView = ({ state, setState, onLogin }: Props) => {
   const [name, setName] = useState(state.settings.masterName || 'Master');
   const [pin, setPin] = useState('');
   const [pin2, setPin2] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // reinstall restore — google client id survives only if baked or retyped here
+  const [cid, setCid] = useState(state.settings.googleClientId);
+  const [restoring, setRestoring] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const rememberCid = (clientId: string) =>
+    setState({ ...state, settings: { ...state.settings, googleClientId: clientId } });
+
+  const restore = async () => {
+    const clientId = cid.trim();
+    if (!clientId) { setMsg('Google Client ID chahiye — upar type karein (one-time).'); return; }
+    setRestoring(true);
+    setMsg('Google mein sign-in ho raha hai…');
+    try {
+      const res = await drivePull<any>(clientId, driveFileName());
+      if (!res.ok && res.found === false) {
+        rememberCid(clientId);
+        setMsg('Drive par backup nahi mila — wahi Google account chunein jisne push kiya tha.');
+      } else if (!res.ok) {
+        rememberCid(clientId);
+        setMsg('✗ ' + (res.error || 'Drive se download nahi hua.'));
+      } else if (res.data?.v !== 2) {
+        setMsg("Ye Drive copy Master's Eye v2 backup nahi hai.");
+      } else {
+        const next = normalizeState(res.data, blankState());
+        // keep the id typed on this screen even if the backup predates it
+        setState({
+          ...next,
+          settings: { ...next.settings, googleClientId: next.settings.googleClientId || clientId },
+        });
+        // accounts are back → LoginGate switches straight to the account picker
+      }
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   const create = async () => {
     if (!/^\d{4,6}$/.test(pin)) { alert('PIN must be 4 to 6 digits.'); return; }
@@ -50,6 +91,31 @@ const SetupView = ({ state, setState, onLogin }: Props) => {
           <KeyRound size={20} /> {busy ? 'Setting up…' : 'Create login'}
         </button>
       </div>
+
+      {/* reinstall path — no local data survives deleting the app, but the
+          Drive copy holds every record AND every login, so one Google
+          sign-in brings the whole organisation back */}
+      <div className="bg-white/10 border border-white/20 rounded-3xl p-4 w-full max-w-sm mt-4">
+        <div className="flex items-center gap-2 font-black uppercase text-xs mb-1">
+          <CloudDownload size={15} /> Reinstalled the app?
+        </div>
+        <div className="text-[11px] font-bold opacity-70 mb-2">
+          Google account se sign-in karein — saare records aur logins wapas aa jayenge, phir apne PIN se kholein.
+        </div>
+        <input
+          value={cid}
+          onChange={e => setCid(e.target.value)}
+          placeholder="Google Client ID (one-time)"
+          className="w-full border-2 border-white/20 bg-white/5 rounded-xl p-2.5 text-[11px] font-bold text-white placeholder-white/40 outline-none focus:border-white/50 mb-2"
+          autoComplete="off"
+        />
+        <button onClick={restore} disabled={restoring}
+          className="w-full py-3 rounded-2xl bg-blue-600 text-white font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2 disabled:opacity-60">
+          <CloudDownload size={16} /> {restoring ? 'Restoring…' : 'Restore from Google Drive'}
+        </button>
+        {msg && <div className="text-[11px] font-bold text-amber-300 mt-2">{msg}</div>}
+      </div>
+
       <div className="text-[11px] font-bold opacity-50 mt-6 text-center max-w-xs">
         You can add Vendor, Team and Client logins later from Settings.
       </div>

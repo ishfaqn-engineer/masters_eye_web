@@ -5,6 +5,7 @@
    lookup, native value setters for React inputs, waitForFileChooser.
    NEVER touches app source — reads the UI the way a user does. */
 import puppeteer from 'puppeteer-core';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -706,6 +707,118 @@ if (process.env.OLLAMA_KEY) {
     return '"paanch sau rupay … tankhwah" has no parseable digits — Gemma resolved it to a Zaid wage payment of 500';
   });
 }
+
+/* ── step 16: the reinstall path ───────────────────────────────────────────
+   Wipe both localStorage keys (what deleting the app does), boot to the
+   blank first-run screen, then restore from a MOCKED Google Drive: GIS stub
+   + Drive REST fixtures. The restored payload carries its own accounts, so
+   the old master PIN must open the app again with the data intact. */
+await step(16, 'reinstall: wipe app → Drive restore (mocked) → old logins + data back', async () => {
+  const accId = 'accRestored1';
+  // must match hashPin(): SHA-256(`${salt}:${pin}`)
+  const pinHash = crypto.createHash('sha256').update(`${accId}:1234`).digest('hex');
+  const backup = {
+    v: 2,
+    settings: {
+      masterName: 'Restored Master', masterPhoto: '', masterRate: 1500,
+      whatsappNumber: '', currency: 'Rs',
+      googleClientId: 'test-id.apps.googleusercontent.com',
+    },
+    accounts: [{ id: accId, name: 'Restored Master', role: 'master', pinHash, photo: '' }],
+    workers: [{ id: 'rw1', name: 'Restored Worker', photo: '', rate: 999 }],
+    ledger: [{ id: 'led-restored', kind: 'in', bucket: 'capital', refId: 'master', amount: 12345, note: 'restored marker', date: '2026-01-01' }],
+  };
+
+  const GIS_STUB =
+    'window.google={accounts:{oauth2:{' +
+    'initTokenClient:(cfg)=>({requestAccessToken:()=>setTimeout(()=>cfg.callback({access_token:"fake-token",expires_in:3600}),25)}),' +
+    'revoke:()=>{}}}};';
+
+  // real Drive responses carry CORS headers — puppeteer's respond() does not
+  // add them, so cross-origin fetch() from the app would be blocked without these
+  const CORS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'authorization, content-type',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, PUT, DELETE, OPTIONS',
+    'Access-Control-Max-Age': '86400',
+  };
+
+  const handler = async (req) => {
+    const u = req.url();
+    try {
+      if (u.startsWith('https://accounts.google.com/gsi/client')) {
+        await req.respond({ status: 200, headers: { ...CORS, 'Content-Type': 'application/javascript' }, body: GIS_STUB });
+        return;
+      }
+      if (u.includes('googleapis.com/drive/v3/files')) {
+        if (req.method() === 'OPTIONS') {
+          await req.respond({ status: 204, headers: CORS, body: '' });
+          return;
+        }
+        if (u.includes('file1?alt=media')) {
+          await req.respond({ status: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body: JSON.stringify(backup) });
+          return;
+        }
+        await req.respond({ status: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body: JSON.stringify({ files: [{ id: 'file1', name: 'masters-eye-shared.json' }] }) });
+        return;
+      }
+      await req.continue().catch(() => {});
+    } catch { /* request already settled */ }
+  };
+  page.on('request', handler);
+  await page.setRequestInterception(true);
+
+  try {
+    // deleting the app = every local key gone; demoSeed re-runs on the next
+    // load (it only seeds when the key is absent) and returns accounts:[]
+    await ev(() => {
+      localStorage.removeItem('masters-eye-v2');
+      localStorage.removeItem('masters-eye-session');
+      localStorage.removeItem('masters-eye-v2:corrupt');
+    });
+    await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    const setup = await waitFor('first-run screen with Create login', async () =>
+      (await ev(() => [...document.querySelectorAll('button')].some(b => String(b.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase() === 'create login'))) ? true : false, 45000);
+    if (!setup) throw new Error('fresh boot never showed the setup screen');
+    const st0 = await ev(() => JSON.parse(localStorage.getItem('masters-eye-v2') || '{}'));
+    if ((st0.accounts || []).length) throw new Error('wipe failed — accounts still present: ' + JSON.stringify((st0.accounts || []).map(a => a.name)));
+
+    // type the Client ID once (fresh install has no settings) and restore
+    const typed = await setNative('input[placeholder^="Google Client ID"]', 'test-id.apps.googleusercontent.com');
+    if (!typed.ok) throw new Error('Client ID input not found on the setup screen');
+    await clickBtn({ text: 'Restore from Google Drive' });
+    await waitFor('account picker showing "Restored Master"', async () => (await accountButtons()).some(t => t.toLowerCase().includes('restored master')), 15000);
+
+    // the OLD pin still opens the account
+    await clickBtn({ text: 'Restored Master' });
+    await waitFor('PIN field on the picker', async () => (await page.$$('input[type="password"]')).length === 1);
+    await setNative('input[type="password"]', '1234');
+    await clickBtn({ text: 'Enter', exact: true });
+    await waitFor('dashboard after restored login', async () => (await screenName()) === "Master's Eye", 15000);
+
+    const sess = await ev(() => localStorage.getItem('masters-eye-session'));
+    if (sess !== accId) throw new Error('session not written for the restored account; got ' + JSON.stringify(sess));
+
+    const chk = await ev(() => {
+      const s = JSON.parse(localStorage.getItem('masters-eye-v2') || '{}');
+      return {
+        acc: (s.accounts || []).map(a => a.name),
+        w: (s.workers || []).map(w => w.name),
+        led: (s.ledger || []).length,
+        note: (s.ledger || []).find(l => l.id === 'led-restored')?.note || '',
+      };
+    });
+    if (!chk.acc.includes('Restored Master')) throw new Error('restored accounts missing: ' + JSON.stringify(chk.acc));
+    if (!chk.w.includes('Restored Worker')) throw new Error('restored workers missing: ' + JSON.stringify(chk.w));
+    if (chk.note !== 'restored marker' || !chk.led) throw new Error('restored ledger marker missing: ' + JSON.stringify(chk));
+
+    return `wiped both keys → setup screen → typed Client ID → mocked Drive pull → picker "Restored Master" → PIN 1234 → dashboard; ${chk.acc.length} account / ${chk.w.length} worker / ${chk.led} ledger rows restored`;
+  } finally {
+    page.off('request', handler);
+    await page.setRequestInterception(false).catch(() => {});
+  }
+});
 
 /* ───────────────────────────── report ───────────────────────────── */
 console.log('\n=== STEP RESULTS ===');
