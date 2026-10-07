@@ -155,6 +155,8 @@ export type LedgerEntry = {
   refId: ID;
   amount: number;
   date: string;
+  /** immutable time this transaction was actually recorded */
+  timestamp?: string;
   note: string;
   /** for wage rows: which month this payment settles (defaults to date's month) */
   ym?: string;
@@ -342,7 +344,7 @@ export function normalizeState(parsed: any, base: AppState = emptyState()): AppS
   const ledger = Array.isArray(parsed?.ledger)
     ? parsed.ledger
         .filter((l: any) => l && typeof l.id === 'string' && Number.isFinite(Number(l.amount)))
-        .map((l: any) => ({ ...l, amount: Number(l.amount) }))
+        .map((l: any) => ({ ...l, amount: Number(l.amount), timestamp: typeof l.timestamp === 'string' ? l.timestamp : undefined }))
     : [];
   // orders: keep only rows with real ids; coerce a malformed spec sheet instead
   // of letting one bad line crash the Orders and Clients screens
