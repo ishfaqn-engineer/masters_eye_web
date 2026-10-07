@@ -224,31 +224,14 @@ export async function installPing(appVersion: string): Promise<CallResult> {
   return call({ op: 'install', deviceId: deviceId(), deviceName: deviceName(), appVersion });
 }
 
-/* ── backups (state JSON → a Drive file owned by the script) ───────────── */
-
-const slim = (obj: any): any => {
-  const walk = (o: any): any => {
-    if (Array.isArray(o)) return o.map(walk);
-    if (o && typeof o === 'object') {
-      const c: any = Array.isArray(o) ? [] : {};
-      for (const [k, v] of Object.entries(o)) {
-        const heavy = k === 'designs' || k.toLowerCase().includes('photo');
-        if (heavy && typeof v === 'string' && v.startsWith('data:')) c[k] = '';
-        else if (heavy && Array.isArray(v)) c[k] = v.filter((x: any) => !(typeof x === 'string' && x.startsWith('data:')));
-        else c[k] = walk(v);
-      }
-      return c;
-    }
-    return o;
-  };
-  return walk(obj);
-};
-
+/* ── backups (complete state JSON → a Drive file owned by the script) ─────
+   Keep embedded photos/designs too. Large payloads are already chunked below,
+   so a restore should reproduce the owner's records rather than a slim copy. */
 const CHUNK = 300000;
 
-/** photos stripped, then uploaded whole (or in parts for very big shops) */
+/** complete state uploaded whole, or in parts for large shops */
 export async function backupState(username: string, state: AppState): Promise<CallResult> {
-  const payload = JSON.stringify({ ...slim(state), exportedAt: new Date().toISOString() });
+  const payload = JSON.stringify({ ...state, exportedAt: new Date().toISOString() });
   if (payload.length <= CHUNK) {
     return call({ op: 'backup', username: normUser(username), data: payload });
   }
