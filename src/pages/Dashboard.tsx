@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users, Camera, ShoppingCart, TreePine, Wallet, Package, RefreshCw, Settings as Cog, AlertTriangle } from 'lucide-react';
+import { Users, Camera, ShoppingCart, TreePine, Wallet, Package, RefreshCw, Settings as Cog, AlertTriangle, Activity, CheckCircle2 } from 'lucide-react';
 import { AppState, today, monthLabel } from '../store';
 import * as D from '../lib/derive';
 import { money, BigButton, WhatsAppBtn } from '../components/ui';
@@ -30,6 +30,16 @@ export default function Dashboard({ state, navigate, sync, syncing }: Props) {
   const dueVendors = state.vendors.map(v => ({ v, d: D.vendorDue(state, v.id) })).filter(x => x.d > 0);
   const dueWages = state.workers.map(w => ({ w, d: D.wageRemaining(state, w.id, ym) })).filter(x => x.d > 0);
   const hasDues = dueClients.length + dueVendors.length + dueWages.length > 0;
+  const checks = D.runChecks(state);
+  const badChecks = checks.filter(c => !c.ok);
+  const recent = [...state.ledger].sort((a,b) => (b.timestamp || b.date).localeCompare(a.timestamp || a.date)).slice(0, 6);
+  const refName = (l: any) => l.bucket === 'client'
+    ? state.clients.find(c => c.id === l.refId)?.name || 'Deleted client'
+    : l.bucket === 'wage'
+      ? (l.refId === 'master' ? state.settings.masterName : state.workers.find(w => w.id === l.refId)?.name || 'Deleted worker')
+      : l.bucket === 'vendor'
+        ? state.vendors.find(v => v.id === l.vendorId)?.name || 'Vendor'
+        : l.bucket === 'capital' ? 'Owner capital' : l.note;
 
   return (
     <div className="p-4 space-y-4">
@@ -131,6 +141,39 @@ export default function Dashboard({ state, navigate, sync, syncing }: Props) {
             </div>
           </div>
         )}
+      </div>
+
+      <div className="bg-white rounded-3xl shadow p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="font-black uppercase text-sm flex items-center gap-2"><Activity size={17}/> Recent activity</div>
+          <button onClick={() => navigate('payments')} className="text-[10px] font-black uppercase text-green-600">Open money</button>
+        </div>
+        <div className="divide-y divide-gray-100">
+          {recent.map(l => (
+            <div key={l.id} className="flex items-center gap-3 py-2">
+              <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black ${l.kind === 'in' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+                {l.kind === 'in' ? '+' : '−'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-black truncate">{refName(l)}</div>
+                <div className="text-[10px] font-bold text-gray-400 truncate">{l.date}{l.timestamp ? ` · ${new Date(l.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}` : ''} · {l.note}</div>
+              </div>
+              <div className={`font-black text-sm ${l.kind === 'in' ? 'text-green-600' : 'text-red-600'}`}>₹{money(l.amount)}</div>
+            </div>
+          ))}
+          {!recent.length && <div className="text-center text-gray-300 font-bold py-4 text-xs">No activity yet</div>}
+        </div>
+      </div>
+
+      <div className={`rounded-3xl shadow p-4 ${badChecks.length ? 'bg-amber-50 border border-amber-200' : 'bg-white'}`}>
+        <div className="font-black uppercase text-sm flex items-center gap-2">
+          {badChecks.length ? <AlertTriangle size={17} className="text-amber-600"/> : <CheckCircle2 size={17} className="text-green-600"/>}
+          Data health
+        </div>
+        <div className="text-[11px] font-bold text-gray-500 mt-1">
+          {badChecks.length ? `${badChecks.length} issue${badChecks.length === 1 ? '' : 's'} need attention` : 'Records are internally consistent'}
+        </div>
+        {badChecks.slice(0,3).map(c => <div key={c.label} className="text-[10px] font-bold text-amber-700 mt-1">• {c.label}: {c.detail}</div>)}
       </div>
 
       {/* one-tap WhatsApp reminders for every open balance */}
