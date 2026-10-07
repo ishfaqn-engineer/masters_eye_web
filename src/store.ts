@@ -4,8 +4,8 @@ import { saveBlob } from './lib/native';
 
 /* shipped build identity — the update check compares these against the
    server manifest (op=update) */
-export const APP_VERSION = '2.0.0';
-export const APP_CODE = 11;
+export const APP_VERSION = '2.2.0';
+export const APP_CODE = 22;
 
 export type Worker = { id: ID; name: string; photo: string; rate: number; phone?: string };
 
