@@ -46,11 +46,11 @@ export default function App() {
      Heartbeat keeps "online" live in the master's console; installs ping
      once per install (that counter is the download number); every settled
      change re-pushes the state file on a short debounce, so deleting the
-     phone app costs nothing — log in again and the backup restores. */
+     phone app costs nothing — restore from the same owner backup link. */
   // Simple owner mode: no app authentication, device IDs, usernames or PINs.
   // Data ownership is handled by local persistence + the optional owner's Drive backup.
   const account: Account = { id: 'master', name: state.settings.masterName || 'Master', role: 'master', pinHash: '' };
-  const myUser = 'master';
+  const myUser = 'owner';
 
   useEffect(() => {
     if (!hasServer(state)) return;
