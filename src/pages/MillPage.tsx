@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, TreePine, CreditCard, Users, Package } from 'lucide-react';
+import { Plus, TreePine, CreditCard, Users, Package, Banknote, Landmark } from 'lucide-react';
 import { AppState, WoodLot, Vendor, today } from '../store';
 import * as D from '../lib/derive';
 import { money, Modal, Field, inputCls, MoneyField, ExportRow, PhotoInput, EditBtn, DeleteBtn, StatCard, WhatsAppBtn } from '../components/ui';
@@ -21,6 +21,8 @@ export default function MillPage({ state, setState }: Props) {
 
   const [payVendor, setPayVendor] = useState<{ vendorId: string; lotId: string; due: number } | null>(null);
   const [payAmt, setPayAmt] = useState(0);
+  const [payDate, setPayDate] = useState(today());
+  const [payMethod, setPayMethod] = useState<'cash' | 'online'>('cash');
 
   const totalDebt = D.totalVendorDebt(state);
   const totalCubic = state.woodLots.reduce((a, l) => a + l.cubicFeet, 0);
@@ -52,8 +54,10 @@ export default function MillPage({ state, setState }: Props) {
   };
 
   const saveVendor = () => {
-    if (editingVendor) setState({ ...state, vendors: state.vendors.map(v => v.id === editingVendor.id ? { ...v, ...vDraft } : v) });
-    else setState({ ...state, vendors: [...state.vendors, { id: 'v' + Date.now() + Math.random().toString(36).slice(2, 6), ...vDraft }] });
+    if (!vDraft.name.trim()) { alert('Enter vendor name.'); return; }
+    const cleanVendor = { ...vDraft, name: vDraft.name.trim(), phone: vDraft.phone.replace(/\D/g, '') };
+    if (editingVendor) setState({ ...state, vendors: state.vendors.map(v => v.id === editingVendor.id ? { ...v, ...cleanVendor } : v) });
+    else setState({ ...state, vendors: [...state.vendors, { id: 'v' + Date.now() + Math.random().toString(36).slice(2, 6), ...cleanVendor }] });
     setAddingVendor(false); setEditingVendor(null);
   };
 
@@ -71,10 +75,10 @@ export default function MillPage({ state, setState }: Props) {
       ledger: [...state.ledger, {
         id: 'led' + Date.now(), kind: 'out', bucket: 'vendor', refId: payVendor.lotId,
         vendorId: payVendor.vendorId, // stamped so this cash survives a lot deletion
-        amount: amt, date: today(), note: 'Wood payment'
+        amount: amt, date: payDate || today(), timestamp: new Date().toISOString(), note: 'Wood payment', method: payMethod
       }]
     });
-    setPayVendor(null); setPayAmt(0);
+    setPayVendor(null); setPayAmt(0); setPayDate(today()); setPayMethod('cash');
   };
 
   const removeLot = (l: WoodLot) => {
@@ -176,7 +180,7 @@ export default function MillPage({ state, setState }: Props) {
                     className="flex-1 py-2 rounded-xl bg-wood/10 text-wood text-[11px] font-black uppercase active:scale-95 flex items-center justify-center gap-1">
                     <Package size={13} /> Edit
                   </button>
-                  <button onClick={() => { setPayVendor({ vendorId: l.vendorId, lotId: l.id, due }); setPayAmt(due); }}
+                  <button onClick={() => { setPayVendor({ vendorId: l.vendorId, lotId: l.id, due }); setPayAmt(due); setPayDate(today()); setPayMethod('cash'); }}
                     disabled={due <= 0}
                     className={`flex-1 py-2 rounded-xl text-[11px] font-black uppercase active:scale-95 ${due > 0 ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-300'}`}>
                     Pay
@@ -250,6 +254,13 @@ export default function MillPage({ state, setState }: Props) {
             {[10000, 50000, 100000].map(v => (
               <button key={v} onClick={() => setPayAmt(a => a + v)} className="py-3 bg-green-100 text-green-800 rounded-xl font-black active:scale-95">+{money(v)}</button>
             ))}
+          </div>
+          <Field label="Payment date">
+            <input type="date" className={inputCls} value={payDate} onChange={e => setPayDate(e.target.value)} />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setPayMethod('cash')} className={`py-3 rounded-xl font-black uppercase text-xs flex items-center justify-center gap-1 ${payMethod === 'cash' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-500'}`}><Banknote size={15}/> Cash</button>
+            <button onClick={() => setPayMethod('online')} className={`py-3 rounded-xl font-black uppercase text-xs flex items-center justify-center gap-1 ${payMethod === 'online' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}><Landmark size={15}/> Online</button>
           </div>
         </div>
         <button onClick={recordPayment} className="w-full py-4 bg-green-600 text-white rounded-2xl font-black uppercase active:scale-95">
