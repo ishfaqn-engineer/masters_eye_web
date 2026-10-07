@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Camera, Users, Wallet, Settings as Cog, Home, LogOut } from 'lucide-react';
+import { Camera, Users, Wallet, Settings as Cog, Home } from 'lucide-react';
 import { AppState, loadState, saveState, syncToDrive, Account, APP_VERSION } from './store';
-import { readSession, writeSession, clearSession } from './lib/auth';
 import { hasServer, heartbeat, installPing, backupState } from './lib/server';
 import { Header } from './components/ui';
-import LoginGate from './components/LoginGate';
 import Dashboard from './pages/Dashboard';
 import VendorHome from './pages/VendorHome';
 import MyWork from './pages/MyWork';
@@ -41,7 +39,6 @@ export default function App() {
   const [state, setStateRaw] = useState<AppState>(() => loadState());
   const [page, setPage] = useState('dashboard');
   const [syncing, setSyncing] = useState(false);
-  const [session, setSession] = useState<string | null>(() => readSession());
 
   useEffect(() => { saveState(state); }, [state]);
 
@@ -50,8 +47,10 @@ export default function App() {
      once per install (that counter is the download number); every settled
      change re-pushes the state file on a short debounce, so deleting the
      phone app costs nothing — log in again and the backup restores. */
-  const me = state.accounts.find(a => a.id === session) || null;
-  const myUser = me?.username || '';
+  // Simple owner mode: no app authentication, device IDs, usernames or PINs.
+  // Data ownership is handled by local persistence + the optional owner's Drive backup.
+  const account: Account = { id: 'master', name: state.settings.masterName || 'Master', role: 'master', pinHash: '' };
+  const myUser = 'master';
 
   useEffect(() => {
     if (!hasServer(state)) return;
@@ -83,12 +82,7 @@ export default function App() {
 
   const setState = (s: AppState) => setStateRaw(s);
 
-  const account: Account | null = me;
-  const gated = state.accounts.length > 0;
-  const role: Role = account ? account.role : 'master';
-
-  const login = (id: string) => { writeSession(id); setSession(id); setPage('dashboard'); };
-  const logout = () => { clearSession(); setSession(null); setPage('dashboard'); };
+  const role: Role = 'master';
 
   const sync = async () => {
     if (syncing) return;
@@ -116,17 +110,13 @@ export default function App() {
   const current = allowed[role].includes(page) ? page : home[role];
   const go = (p: string) => setPage(allowed[role].includes(p) ? p : home[role]);
 
-  if (!account) {
-    // no session (or no logins exist yet) — LoginGate handles first-run setup too
-    return <LoginGate state={state} setState={setState} onLogin={login} />;
-  }
 
   const body = () => {
     switch (current) {
-      case 'vendorHome': return <VendorHome state={state} account={account!} />;
-      case 'mywork': return <MyWork state={state} account={account!} />;
-      case 'clientHome': return <ClientHome state={state} setState={setState} account={account!} />;
-      case 'userHome': return <UserHome state={state} account={account!} onLogout={logout} />;
+      case 'vendorHome': return <VendorHome state={state} account={account} />;
+      case 'mywork': return <MyWork state={state} account={account} />;
+      case 'clientHome': return <ClientHome state={state} setState={setState} account={account} />;
+      case 'userHome': return <UserHome state={state} account={account} onLogout={() => {}} />;
       case 'team': return <TeamPage state={state} setState={setState} />;
       case 'clients': return <ClientsPage state={state} setState={setState} />;
       case 'orders': return <OrdersPage state={state} setState={setState} />;
@@ -134,7 +124,7 @@ export default function App() {
       case 'payments': return <PaymentsPage state={state} setState={setState} />;
       case 'expenses': return <ExpensesPage state={state} setState={setState} />;
       case 'console': return <Console state={state} setState={setState} />;
-      case 'settings': return <SettingsPage state={state} setState={setState} sync={sync} syncing={syncing} account={account} role={role} onLogout={logout} onConsole={() => go('console')} />;
+      case 'settings': return <SettingsPage state={state} setState={setState} sync={sync} syncing={syncing} account={account} role={role} onLogout={() => {}} onConsole={() => go('console')} />;
       default: return <Dashboard state={state} navigate={go} sync={sync} syncing={syncing} />;
     }
   };
@@ -167,17 +157,10 @@ export default function App() {
         onBack={() => go(home[role])}
         right={
           <div className="flex items-center gap-2">
-            {account && (
-              <div className="text-right leading-tight mr-1">
-                <div className="text-[10px] font-black uppercase opacity-80 truncate max-w-[90px]">{account.name}</div>
-                <div className="text-[9px] font-bold uppercase opacity-50">{account.role}</div>
-              </div>
-            )}
-            {gated && (
-              <button onClick={logout} title="Log out" className="p-2 bg-white/15 rounded-full active:scale-90">
-                <LogOut size={20} />
-              </button>
-            )}
+            <div className="text-right leading-tight mr-1">
+              <div className="text-[10px] font-black uppercase opacity-80 truncate max-w-[120px]">{state.settings.masterName || 'Master'}</div>
+              <div className="text-[9px] font-bold uppercase opacity-50">owner</div>
+            </div>
           </div>
         }
       />
