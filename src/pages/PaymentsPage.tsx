@@ -43,6 +43,7 @@ export default function PaymentsPage({ state, setState }: Props) {
   // and the amount is editable, so a partial month can settle part of the due
   const [payWage, setPayWage] = useState<{ id: string; name: string; ym: string; amount: number } | null>(null);
   const [payAmt, setPayAmt] = useState(0);
+  const [payDate, setPayDate] = useState(today());
 
   // vendor settlement from this screen: enter any amount, oldest lots first
   const [payVendorFor, setPayVendorFor] = useState<{ vendorId: string; name: string; due: number } | null>(null);
@@ -73,11 +74,11 @@ export default function PaymentsPage({ state, setState }: Props) {
       ...state,
       ledger: [...state.ledger, {
         id: 'led' + Date.now(), kind: 'out', bucket: 'wage', refId: payWage.id,
-        amount: amt, date: today(), ym: payWage.ym,
-        note: `Wage settlement ${monthLabel(payWage.ym)} · ${method}`, method
+        amount: amt, date: payDate || today(), timestamp: new Date().toISOString(), ym: payWage.ym,
+        note: `Wage payment ${monthLabel(payWage.ym)} · ${method}`, method
       }]
     });
-    setPayWage(null); setPayAmt(0);
+    setPayWage(null); setPayAmt(0); setPayDate(today());
   };
 
   /* vendor payment with an editable amount — the cash is split across this
@@ -99,7 +100,7 @@ export default function PaymentsPage({ state, setState }: Props) {
       const take = Math.min(rem, left);
       rows.push({
         id: `led${stamp}-${rows.length}`, kind: 'out', bucket: 'vendor', refId: lot.id,
-        vendorId: payVendorFor.vendorId, amount: take, date: today(),
+        vendorId: payVendorFor.vendorId, amount: take, date: today(), timestamp: new Date().toISOString(),
         note: `Wood payment · ${method}`, method
       });
       left -= take;
@@ -218,7 +219,7 @@ export default function PaymentsPage({ state, setState }: Props) {
               action={
                 balance > 0 ? (
                   <button
-                    onClick={() => { setPayWage({ id: w.id, name: w.name, ym, amount: balance }); setPayAmt(balance); }}
+                    onClick={() => { setPayWage({ id: w.id, name: w.name, ym, amount: balance }); setPayAmt(balance); setPayDate(today()); }}
                     className="py-2 px-3 bg-blue-600 text-white rounded-xl text-[11px] font-black uppercase active:scale-95"
                   >Pay</button>
                 ) : <CheckCircle2 size={20} className="text-green-500" />
@@ -240,7 +241,7 @@ export default function PaymentsPage({ state, setState }: Props) {
               ...state,
               ledger: [...state.ledger, {
                 id: 'led' + Date.now(), kind: 'in', bucket: 'capital', refId: 'master',
-                amount: v, date: today(), note: 'Own money put in'
+                amount: v, date: today(), timestamp: new Date().toISOString(), note: 'Own money put in'
               }]
             });
           }}
@@ -267,7 +268,7 @@ export default function PaymentsPage({ state, setState }: Props) {
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-sm capitalize truncate">{l.bucket} · {ref || '—'}</div>
                 <div className="text-[11px] text-gray-400 truncate flex items-center gap-1">
-                  <span className="truncate">{l.date} · {l.note}</span>
+                  <span className="truncate">{l.date}{l.timestamp ? ` · ${new Date(l.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''} · {l.note}</span>
                   {l.method && (
                     <span className={`text-[9px] font-black uppercase px-1 rounded shrink-0 ${l.method === 'online' ? 'bg-blue-50 text-blue-500' : 'bg-green-50 text-green-600'}`}>
                       {l.method}
@@ -333,6 +334,9 @@ export default function PaymentsPage({ state, setState }: Props) {
               <div className="text-sm font-black text-blue-600 mt-1">Due ₹{money(payWage.amount)}</div>
             </div>
             <MoneyField label="Amount you are paying" value={payAmt} onChange={(v: number) => setPayAmt(v)} />
+            <Field label="Payment date">
+              <input type="date" className={inputCls} value={payDate} onChange={e => setPayDate(e.target.value)} />
+            </Field>
             <div className="text-center text-[11px] font-bold text-gray-400">
               {payAmt < payWage.amount
                 ? `Partial — leaves ₹${money(payWage.amount - payAmt)} due this month`
@@ -351,7 +355,7 @@ export default function PaymentsPage({ state, setState }: Props) {
                 <Landmark size={24} /> Online
               </button>
             </div>
-            <div className="text-[10px] font-bold text-gray-400">Recorded with today's date — shows in this member's history.</div>
+            <div className="text-[10px] font-bold text-gray-400">Each payment is saved as a separate history entry. The selected payment date and the exact recording time are both preserved.</div>
             <button onClick={() => setPayWage(null)} className="w-full py-3 rounded-2xl bg-gray-100 font-black uppercase active:scale-95">Cancel</button>
           </div>
         )}
