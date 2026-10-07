@@ -2,6 +2,7 @@ name: Build APK
 
 on:
   push:
+    branches: ['main']
     tags: ['v*']
   workflow_dispatch:
 
@@ -73,10 +74,14 @@ jobs:
         run: gradle -p android assembleRelease
 
       - name: Name the APK
-        if: startsWith(github.ref, 'refs/tags/')
         run: |
           d=android/app/build/outputs/apk/release
-          mv "$d/app-release.apk" "$d/TheMastersEye-${GITHUB_REF_NAME}.apk"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            name="TheMastersEye-${GITHUB_REF_NAME}.apk"
+          else
+            name="TheMastersEye-v2.2.0.apk"
+          fi
+          mv "$d/app-release.apk" "$d/$name"
 
       - uses: actions/upload-artifact@v4
         with:
