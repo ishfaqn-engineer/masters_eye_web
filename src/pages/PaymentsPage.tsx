@@ -48,6 +48,7 @@ export default function PaymentsPage({ state, setState }: Props) {
   // vendor settlement from this screen: enter any amount, oldest lots first
   const [payVendorFor, setPayVendorFor] = useState<{ vendorId: string; name: string; due: number } | null>(null);
   const [vendorAmt, setVendorAmt] = useState(0);
+  const [vendorPayDate, setVendorPayDate] = useState(today());
 
   const openLedger = (l: LedgerEntry) => {
     setEditLed(l);
@@ -100,13 +101,13 @@ export default function PaymentsPage({ state, setState }: Props) {
       const take = Math.min(rem, left);
       rows.push({
         id: `led${stamp}-${rows.length}`, kind: 'out', bucket: 'vendor', refId: lot.id,
-        vendorId: payVendorFor.vendorId, amount: take, date: today(), timestamp: new Date().toISOString(),
+        vendorId: payVendorFor.vendorId, amount: take, date: vendorPayDate || today(), timestamp: new Date().toISOString(),
         note: `Wood payment · ${method}`, method
       });
       left -= take;
     }
     if (rows.length) setState({ ...state, ledger: [...state.ledger, ...rows] });
-    setPayVendorFor(null); setVendorAmt(0);
+    setPayVendorFor(null); setVendorAmt(0); setVendorPayDate(today());
   };
 
   const deleteLedger = () => {
@@ -176,7 +177,7 @@ export default function PaymentsPage({ state, setState }: Props) {
                 <div className="flex items-center gap-1.5">
                   {due > 0 && (
                     <button
-                      onClick={() => { setPayVendorFor({ vendorId: v.id, name: v.name, due }); setVendorAmt(due); }}
+                      onClick={() => { setPayVendorFor({ vendorId: v.id, name: v.name, due }); setVendorAmt(due); setVendorPayDate(today()); }}
                       className="py-2 px-3 bg-green-600 text-white rounded-xl text-[11px] font-black uppercase active:scale-95"
                     >Pay</button>
                   )}
@@ -370,6 +371,9 @@ export default function PaymentsPage({ state, setState }: Props) {
               <div className="text-3xl font-black text-red-600">₹ {money(payVendorFor.due)}</div>
             </div>
             <MoneyField label="Amount you are paying" value={vendorAmt} onChange={(v: number) => setVendorAmt(v)} />
+            <Field label="Payment date">
+              <input type="date" className={inputCls} value={vendorPayDate} onChange={e => setVendorPayDate(e.target.value)} />
+            </Field>
             <div className="text-center text-[11px] font-bold text-gray-400">
               {vendorAmt < payVendorFor.due
                 ? `Partial — leaves ₹${money(payVendorFor.due - vendorAmt)} on credit`
