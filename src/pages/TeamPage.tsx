@@ -124,9 +124,10 @@ export default function TeamPage({ state, setState }: Props) {
   const detailPaid = detailId ? D.paidWages(state, detailId, dMonth) : 0;
   const detailDue = detailId ? D.wageRemaining(state, detailId, dMonth) : 0;
   const detailPayments = detailId
-    ? state.ledger.filter(l => l.bucket === 'wage' && l.refId === detailId)
-        .slice().sort((a, b) => b.date.localeCompare(a.date))
+    ? state.ledger.filter(l => l.bucket === 'wage' && l.refId === detailId && (l.ym ?? l.date.slice(0, 7)) === dMonth)
+        .slice().sort((a, b) => (b.timestamp || b.date).localeCompare(a.timestamp || a.date))
     : [];
+  const detailPaidAllTime = detailId ? D.paidWages(state, detailId) : 0;
   const dDim = daysInMonth(dMonth);
   const dFirstDow = (new Date(dMonth + '-01T00:00:00').getDay() + 6) % 7; // Monday = 0
   const dayState = (d: string): 'present' | 'absent' | 'none' => {
@@ -338,7 +339,7 @@ export default function TeamPage({ state, setState }: Props) {
               <img src={detailRow.photo || `https://i.pravatar.cc/150?u=${detailRow.id}`} className="w-14 h-14 rounded-full object-cover" alt="" />
               <div className="flex-1 min-w-0">
                 <div className="font-black uppercase truncate">{detailRow.name}</div>
-                <div className="text-xs font-bold text-gray-400">Rs {money(detailRow.rate)}/day · {detailId === 'master' ? D.masterDays(state) : D.workerDays(state, detailRow.id)} days all time</div>
+                <div className="text-xs font-bold text-gray-400">Rs {money(detailRow.rate)}/day · {detailId === 'master' ? D.masterDays(state) : D.workerDays(state, detailRow.id)} days all time · Rs {money(detailPaidAllTime)} paid all time</div>
               </div>
             </div>
 
@@ -396,7 +397,7 @@ export default function TeamPage({ state, setState }: Props) {
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-gray-100 border border-gray-200" /> No record</span>
             </div>
 
-            <div className="text-xs font-black uppercase text-gray-400 mb-1">Payments taken</div>
+            <div className="text-xs font-black uppercase text-gray-400 mb-1">Payments in {monthLabel(dMonth)}</div>
             {detailPayments.length === 0 && (
               <div className="text-center text-gray-300 font-bold py-4 text-xs">No wage payments yet</div>
             )}
@@ -410,7 +411,7 @@ export default function TeamPage({ state, setState }: Props) {
                       : <IndianRupee size={16} className="text-gray-400" />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-black uppercase">{l.date}</div>
+                  <div className="text-xs font-black uppercase">{l.date}{l.timestamp ? ` · ${new Date(l.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</div>
                   <div className="text-[11px] font-bold text-gray-400 truncate">{l.note}</div>
                 </div>
                 <div className="text-right shrink-0">
