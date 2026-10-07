@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Wrench, Package, RefreshCw, CalendarClock, IndianRupee } from 'lucide-react';
+import { Plus, Wrench, Package, RefreshCw, CalendarClock, IndianRupee, Search, CopyPlus } from 'lucide-react';
 import { AppState, Expense, LedgerEntry, today, monthKey, monthLabel } from '../store';
 import * as D from '../lib/derive';
 import { money, Modal, Field, inputCls, MoneyField, PhotoInput, EditBtn, DeleteBtn, StatCard, ExportRow } from '../components/ui';
@@ -16,6 +16,7 @@ export default function ExpensesPage({ state, setState }: Props) {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
   const [draft, setDraft] = useState<any>(blank());
+  const [search, setSearch] = useState('');
 
   const thisMonth = today().slice(0, 7);
   const total = D.expensesTotal(state);
@@ -36,7 +37,7 @@ export default function ExpensesPage({ state, setState }: Props) {
           ? state.ledger.map(l => isRow(l) ? { ...l, amount: clean.amount, date: clean.date, note: clean.label } : l)
           : [...state.ledger, {
               id: 'led-' + id, kind: 'out', bucket: 'expense', refId: id,
-              amount: clean.amount, date: clean.date, note: clean.label
+              amount: clean.amount, date: clean.date, timestamp: new Date().toISOString(), note: clean.label
             } as LedgerEntry]
       });
     } else {
@@ -47,7 +48,7 @@ export default function ExpensesPage({ state, setState }: Props) {
         // display-only row: cashPaidOut excludes bucket 'expense', cashInHand subtracts expenses array
         ledger: [...state.ledger, {
           id: 'led-' + id, kind: 'out', bucket: 'expense', refId: id,
-          amount: clean.amount, date: clean.date, note: clean.label
+          amount: clean.amount, date: clean.date, timestamp: new Date().toISOString(), note: clean.label
         } as LedgerEntry]
       });
     }
@@ -64,6 +65,22 @@ export default function ExpensesPage({ state, setState }: Props) {
   };
 
   const byMonth = Array.from(new Set(state.expenses.map(e => monthKey(e.date)))).sort().reverse();
+  const filteredExpenses = state.expenses.filter(e => {
+    const q = search.trim().toLowerCase();
+    return !q || e.label.toLowerCase().includes(q) || e.category.includes(q) || e.recurring.includes(q);
+  });
+  const repeatExpense = (e: Expense) => {
+    const id = 'e' + Date.now() + Math.random().toString(36).slice(2, 6);
+    const copy: Expense = { ...e, id, date: today() };
+    setState({
+      ...state,
+      expenses: [copy, ...state.expenses],
+      ledger: [...state.ledger, {
+        id: 'led-' + id, kind: 'out', bucket: 'expense', refId: id,
+        amount: copy.amount, date: copy.date, timestamp: new Date().toISOString(), note: copy.label
+      } as LedgerEntry]
+    });
+  };
 
   return (
     <div className="p-4 space-y-4">
@@ -77,8 +94,14 @@ export default function ExpensesPage({ state, setState }: Props) {
         onPdf={() => exportExpensesPdf(state)}
       />
 
+      <div className="bg-white rounded-2xl shadow p-3 flex items-center gap-2">
+        <Search size={18} className="text-gray-400" />
+        <input className="flex-1 outline-none font-bold text-sm" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search expenses" />
+        {search && <button onClick={() => setSearch('')} className="text-xs font-black text-gray-400">CLEAR</button>}
+      </div>
+
       <div className="space-y-3">
-        {state.expenses.map(e => {
+        {filteredExpenses.map(e => {
           const Icon = icons[e.category] || Wrench;
           return (
             <div key={e.id} className="bg-white rounded-2xl p-3 shadow flex items-center gap-3 border-l-8 border-teal-500">
@@ -90,12 +113,16 @@ export default function ExpensesPage({ state, setState }: Props) {
                 <div className="text-[11px] font-bold text-gray-400 uppercase">{e.category} · {e.recurring} · {e.date}</div>
               </div>
               <div className="font-black text-lg text-teal-700">₹{money(e.amount)}</div>
+              {e.recurring !== 'none' && (
+                <button onClick={() => repeatExpense(e)} title="Record this expense again today"
+                  className="p-2 bg-blue-50 text-blue-600 rounded-lg active:scale-90"><CopyPlus size={15}/></button>
+              )}
               <EditBtn onClick={() => openEdit(e)} />
               <DeleteBtn onClick={() => remove(e)} />
             </div>
           );
         })}
-        {!state.expenses.length && <div className="text-center text-gray-300 font-bold py-6">No expenses recorded</div>}
+        {!filteredExpenses.length && <div className="text-center text-gray-300 font-bold py-6">{state.expenses.length ? 'No expenses match this search' : 'No expenses recorded'}</div>}
       </div>
 
       <button onClick={() => { setDraft(blank()); setEditing(null); setAdding(true); }}
