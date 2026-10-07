@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Camera, Users, Wallet, Settings as Cog, Home } from 'lucide-react';
-import { AppState, loadState, saveState, syncToDrive, Account, APP_VERSION } from './store';
-import { hasServer, heartbeat, installPing, backupState } from './lib/server';
+import { AppState, loadState, saveState, syncToDrive, Account } from './store';
+import { hasServer, backupState } from './lib/server';
 import { Header } from './components/ui';
 import Dashboard from './pages/Dashboard';
 import VendorHome from './pages/VendorHome';
@@ -15,7 +15,6 @@ import MillPage from './pages/MillPage';
 import PaymentsPage from './pages/PaymentsPage';
 import ExpensesPage from './pages/ExpensesPage';
 import SettingsPage from './pages/SettingsPage';
-import Console from './pages/Console';
 
 const titles: Record<string, string> = {
   dashboard: "Master's Eye",
@@ -29,7 +28,6 @@ const titles: Record<string, string> = {
   mill: 'Joinery Mill',
   payments: 'Payments',
   expenses: 'Consumables',
-  console: 'Dev console',
   settings: 'Settings'
 };
 
@@ -51,27 +49,6 @@ export default function App() {
   // Data ownership is handled by local persistence + the optional owner's Drive backup.
   const account: Account = { id: 'master', name: state.settings.masterName || 'Master', role: 'master', pinHash: '' };
   const myUser = 'owner';
-
-  useEffect(() => {
-    if (!hasServer(state)) return;
-    try {
-      if (!localStorage.getItem('masters-eye-pinged')) {
-        localStorage.setItem('masters-eye-pinged', '1');
-        installPing(APP_VERSION);
-      }
-    } catch { /* private mode */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.settings.serverUrl]);
-
-  useEffect(() => {
-    if (!myUser || !hasServer(state)) return;
-    heartbeat(myUser);
-    const t = setInterval(() => { heartbeat(myUser); }, 60000);
-    const vis = () => { if (document.visibilityState === 'visible') heartbeat(myUser); };
-    document.addEventListener('visibilitychange', vis);
-    return () => { clearInterval(t); document.removeEventListener('visibilitychange', vis); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myUser, state.settings.serverUrl]);
 
   useEffect(() => {
     if (!myUser || !hasServer(state)) return;
@@ -98,7 +75,7 @@ export default function App() {
 
   /* role allow-lists */
   const allowed: Record<Role, string[]> = {
-    master: ['dashboard', 'team', 'clients', 'orders', 'mill', 'payments', 'expenses', 'console', 'settings'],
+    master: ['dashboard', 'team', 'clients', 'orders', 'mill', 'payments', 'expenses', 'settings'],
     vendor: ['vendorHome', 'settings'],
     team: ['mywork', 'settings'],
     client: ['clientHome', 'settings'],
@@ -123,8 +100,7 @@ export default function App() {
       case 'mill': return <MillPage state={state} setState={setState} />;
       case 'payments': return <PaymentsPage state={state} setState={setState} />;
       case 'expenses': return <ExpensesPage state={state} setState={setState} />;
-      case 'console': return <Console state={state} setState={setState} />;
-      case 'settings': return <SettingsPage state={state} setState={setState} sync={sync} syncing={syncing} account={account} role={role} onLogout={() => {}} onConsole={() => go('console')} />;
+      case 'settings': return <SettingsPage state={state} setState={setState} sync={sync} syncing={syncing} account={account} role={role} onLogout={() => {}} onConsole={() => {}} />;
       default: return <Dashboard state={state} navigate={go} sync={sync} syncing={syncing} />;
     }
   };
