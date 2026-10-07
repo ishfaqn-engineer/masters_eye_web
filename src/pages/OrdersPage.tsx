@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, DoorOpen, PanelsTopLeft, FileSpreadsheet, Wallet, Ruler, FileText, X } from 'lucide-react';
+import { Plus, DoorOpen, PanelsTopLeft, FileSpreadsheet, Wallet, Ruler, FileText, X, Search, SlidersHorizontal } from 'lucide-react';
 import { AppState, OrderItem, OrderStatus, OrderSpecs, Quote, QuoteItem, quoteTotal, seedSpecs, specsToFlat, orderHeadline, today } from '../store';
 import { money, Modal, Field, inputCls, MoneyField, ExportRow, EditBtn, DeleteBtn, FileDrop, AttachmentList, StatCard, WhatsAppBtn } from '../components/ui';
 import { SpecEditor, SpecSummary } from '../components/SpecEditor';
@@ -31,6 +31,8 @@ export default function OrdersPage({ state, setState }: Props) {
   const [draft, setDraft] = useState<any>(blank(state.clients[0]?.id || ''));
   const [qAdding, setQAdding] = useState(false);
   const [qDraft, setQDraft] = useState<any>(blankQuote(state.clients[0]?.id || ''));
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | OrderStatus>('all');
   // synchronously-mutated flag: a slow upload that lands after close is dropped
   const formOpen = React.useRef(false);
 
@@ -172,6 +174,12 @@ export default function OrdersPage({ state, setState }: Props) {
   };
 
   const total = state.orders.reduce((a, o) => a + o.price, 0);
+  const filteredOrders = state.orders.filter(o => {
+    const c = clientOf(o.clientId);
+    const q = search.trim().toLowerCase();
+    const matchesText = !q || (c?.name || '').toLowerCase().includes(q) || (o.notes || '').toLowerCase().includes(q) || (o.woodType || '').toLowerCase().includes(q);
+    return matchesText && (statusFilter === 'all' || o.status === statusFilter);
+  });
   const clientOf = (id: string) => state.clients.find(c => c.id === id);
   const qDraftTotal = Math.max(0,
     (qDraft.items || []).reduce((a: number, i: any) => a + (Number(i.qty) || 0) * (Number(i.rate) || 0), 0)
@@ -185,6 +193,23 @@ export default function OrdersPage({ state, setState }: Props) {
       </div>
 
       <ExportRow onExcel={() => exportOrdersExcel(state)} onPdf={() => exportOrdersPdf(state)} />
+
+      <div className="bg-white rounded-2xl shadow p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <Search size={18} className="text-gray-400" />
+          <input className="flex-1 outline-none font-bold text-sm" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search client, wood or notes" />
+          {search && <button onClick={() => setSearch('')} className="text-xs font-black text-gray-400">CLEAR</button>}
+        </div>
+        <div className="flex items-center gap-1 overflow-x-auto pb-1">
+          <SlidersHorizontal size={15} className="text-gray-400 shrink-0 mr-1" />
+          {(['all', ...STAGES] as const).map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap ${statusFilter === s ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* estimates: quote a price → WhatsApp → accept turns it into a real order */}
       <div className="bg-white rounded-3xl shadow p-4">
@@ -265,7 +290,7 @@ export default function OrdersPage({ state, setState }: Props) {
       </div>
 
       <div className="space-y-3">
-        {state.orders.map(o => {
+        {filteredOrders.map(o => {
           const c = clientOf(o.clientId);
           const Icon = o.kind === 'door' ? DoorOpen : o.kind === 'window' ? PanelsTopLeft : Ruler;
           const stageIdx = STAGES.indexOf(o.status);
@@ -330,6 +355,9 @@ export default function OrdersPage({ state, setState }: Props) {
           );
         })}
 
+        {filteredOrders.length === 0 && state.orders.length > 0 && (
+          <div className="text-center text-gray-300 font-bold py-5">No orders match this filter</div>
+        )}
         <button onClick={openAdd}
           className="w-full py-4 border-4 border-dashed border-orange-300 rounded-2xl text-orange-500 font-black uppercase active:scale-95 flex items-center justify-center gap-2">
           <Plus /> New Order
