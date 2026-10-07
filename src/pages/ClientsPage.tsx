@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Camera, Wallet, Phone, IndianRupee, CheckCircle2, Package } from 'lucide-react';
+import { Camera, Wallet, Phone, IndianRupee, CheckCircle2, Package, Search, History, Banknote, Landmark } from 'lucide-react';
 import { AppState, Client, today, OrderStatus, orderHeadline } from '../store';
 import * as D from '../lib/derive';
 import { removeFile } from '../lib/files';
@@ -27,12 +27,15 @@ export default function ClientsPage({ state, setState }: Props) {
   const [ordersFor, setOrdersFor] = useState<Client | null>(null);
   const [amount, setAmount] = useState(0);
   const [note, setNote] = useState('');
+  const [payDate, setPayDate] = useState(today());
+  const [payMethod, setPayMethod] = useState<'cash' | 'online'>('cash');
+  const [search, setSearch] = useState('');
+  const [historyFor, setHistoryFor] = useState<Client | null>(null);
 
   const openAdd = () => { setDraft(blank()); setEditing(null); setAdding(true); };
   const openEdit = (c: Client) => { setDraft({ ...c }); setEditing(c); setAdding(true); };
 
   const save = () => {
-    if (!draft.photo && !editing) { alert('Please take a photo of the client first'); return; }
     const { advancePaid, ...rest } = draft;
     if (editing) {
       setState({ ...state, clients: state.clients.map(c => c.id === editing.id ? { ...c, ...rest } : c) });
@@ -49,7 +52,7 @@ export default function ClientsPage({ state, setState }: Props) {
         clients: [...state.clients, client],
         // advance becomes a real ledger row so it can never be double counted
         ledger: advance > 0
-          ? [...state.ledger, { id: 'led' + Date.now(), kind: 'in', bucket: 'client', refId: id, amount: advance, date: today(), note: 'Advance' }]
+          ? [...state.ledger, { id: 'led' + Date.now() + Math.random().toString(36).slice(2, 6), kind: 'in', bucket: 'client', refId: id, amount: advance, date: today(), timestamp: new Date().toISOString(), note: 'Advance', method: 'cash' }]
           : state.ledger
       });
     }
@@ -89,15 +92,19 @@ export default function ClientsPage({ state, setState }: Props) {
     setState({
       ...state,
       ledger: [...state.ledger, {
-        id: 'led' + Date.now(), kind: 'in', bucket: 'client', refId: payFor.id,
-        amount: amt, date: today(), note: note || 'Cash received'
+        id: 'led' + Date.now() + Math.random().toString(36).slice(2, 6), kind: 'in', bucket: 'client', refId: payFor.id,
+        amount: amt, date: payDate || today(), timestamp: new Date().toISOString(), note: note || 'Payment received', method: payMethod
       }]
     });
-    setPayFor(null); setAmount(0); setNote('');
+    setPayFor(null); setAmount(0); setNote(''); setPayDate(today()); setPayMethod('cash');
   };
 
   const totalDue = state.clients.reduce((a, c) => a + Math.max(0, D.clientDue(state, c)), 0);
   const totalGot = state.clients.reduce((a, c) => a + D.clientPaid(state, c), 0);
+  const filteredClients = state.clients.filter(c => {
+    const q = search.trim().toLowerCase();
+    return !q || c.name.toLowerCase().includes(q) || (c.phone || '').includes(q) || (c.notes || '').toLowerCase().includes(q);
+  });
 
   return (
     <div className="p-4 space-y-4">
@@ -106,8 +113,14 @@ export default function ClientsPage({ state, setState }: Props) {
         <StatCard icon={Wallet} label="Still to collect" value={`₹ ${money(totalDue)}`} accent="text-red-600" />
       </div>
 
+      <div className="bg-white rounded-2xl shadow p-3 flex items-center gap-2">
+        <Search size={18} className="text-gray-400" />
+        <input className="flex-1 outline-none font-bold text-sm" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search client, phone or notes" />
+        {search && <button onClick={() => setSearch('')} className="text-xs font-black text-gray-400">CLEAR</button>}
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
-        {state.clients.map(c => {
+        {filteredClients.map(c => {
           const rawDue = D.clientDue(state, c);
           const due = Math.max(0, rawDue);
           const ahead = rawDue < 0;
@@ -144,13 +157,16 @@ export default function ClientsPage({ state, setState }: Props) {
                   className="w-full text-[10px] font-black text-gray-500 bg-gray-50 hover:bg-gray-100 py-1.5 rounded-lg active:scale-95 flex items-center justify-center gap-1">
                   <Package size={11} /> {orders} {orders === 1 ? 'order' : 'orders'} — open
                 </button>
-                <button onClick={() => { setPayFor(c); setAmount(0); setNote(''); }}
+                <button onClick={() => { setPayFor(c); setAmount(0); setNote(''); setPayDate(today()); setPayMethod('cash'); }}
                   disabled={rawDue <= 0}
                   className={`w-full py-2.5 rounded-xl font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-1 ${rawDue > 0 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-400'}`}>
                   <Wallet size={14} /> Receive
                 </button>
-                <div className="grid grid-cols-2 gap-1">
+                <div className="grid grid-cols-3 gap-1">
                   <WhatsAppBtn phone={c.phone} message={clientMessage(state, c.id)} label="Chat" />
+                  <button onClick={() => setHistoryFor(c)} className="py-2 rounded-xl bg-blue-50 text-blue-600 text-[10px] font-black uppercase active:scale-95 flex items-center justify-center gap-1">
+                    <History size={13} /> History
+                  </button>
                   <DeleteBtn onClick={() => remove(c)} />
                 </div>
               </div>
@@ -208,13 +224,20 @@ export default function ClientsPage({ state, setState }: Props) {
               <button key={v} onClick={() => setAmount(a => a + v)} className="py-3 bg-green-100 text-green-800 rounded-xl font-black active:scale-95">+{money(v)}</button>
             ))}
           </div>
+          <Field label="Payment date">
+            <input type="date" className={inputCls} value={payDate} onChange={e => setPayDate(e.target.value)} />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => setPayMethod('cash')} className={`py-3 rounded-xl font-black uppercase text-xs flex items-center justify-center gap-1 ${payMethod === 'cash' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-500'}`}><Banknote size={15}/> Cash</button>
+            <button onClick={() => setPayMethod('online')} className={`py-3 rounded-xl font-black uppercase text-xs flex items-center justify-center gap-1 ${payMethod === 'online' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'}`}><Landmark size={15}/> Online</button>
+          </div>
           <Field label="Note (optional)">
             <input className={inputCls} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. installment 2" />
           </Field>
         </div>
         <button onClick={receive}
           className="w-full py-4 bg-green-600 text-white rounded-2xl font-black uppercase active:scale-95 flex items-center justify-center gap-2">
-          <Wallet size={20} /> Confirm Cash Received
+          <Wallet size={20} /> Confirm Payment
         </button>
         <div className="text-[10px] text-gray-400 font-bold text-center mt-2">Every rupee you enter lands in Payments automatically.</div>
       </Modal>
@@ -243,6 +266,31 @@ export default function ClientsPage({ state, setState }: Props) {
             })}
           </div>
         )}
+      </Modal>
+
+      <Modal open={!!historyFor} onClose={() => setHistoryFor(null)} title={historyFor ? `${historyFor.name} payments` : 'Payment history'}>
+        {historyFor && (() => {
+          const rows = state.ledger.filter(l => l.bucket === 'client' && l.refId === historyFor.id)
+            .slice().sort((a,b) => (b.timestamp || b.date).localeCompare(a.timestamp || a.date));
+          return <div className="space-y-2">
+            <div className="grid grid-cols-3 gap-2 text-center mb-3">
+              <div className="bg-gray-50 rounded-xl p-2"><div className="text-[9px] font-black uppercase text-gray-400">Order value</div><div className="font-black">₹{money(D.clientTotal(state, historyFor))}</div></div>
+              <div className="bg-green-50 rounded-xl p-2"><div className="text-[9px] font-black uppercase text-green-500">Received</div><div className="font-black text-green-600">₹{money(D.clientPaid(state, historyFor))}</div></div>
+              <div className="bg-red-50 rounded-xl p-2"><div className="text-[9px] font-black uppercase text-red-400">Due</div><div className="font-black text-red-600">₹{money(Math.max(0,D.clientDue(state, historyFor)))}</div></div>
+            </div>
+            {rows.map(l => <div key={l.id} className="flex items-center gap-3 border-b border-gray-100 py-2">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${l.method === 'online' ? 'bg-blue-50' : 'bg-green-50'}`}>
+                {l.method === 'online' ? <Landmark size={16} className="text-blue-600"/> : <Banknote size={16} className="text-green-600"/>}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-black text-xs">{l.date}{l.timestamp ? ` · ${new Date(l.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}` : ''}</div>
+                <div className="text-[11px] text-gray-400 font-bold truncate">{l.note}</div>
+              </div>
+              <div className="font-black text-green-600">+₹{money(l.amount)}</div>
+            </div>)}
+            {!rows.length && <div className="text-center text-gray-300 font-bold py-5">No payments yet</div>}
+          </div>;
+        })()}
       </Modal>
     </div>
   );
