@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MessageCircle, Trash2, RefreshCw, Phone, Pencil, Upload, Users, HardDrive, Info, Cloud, Server, Smartphone, Download } from 'lucide-react';
+import { MessageCircle, Trash2, RefreshCw, Phone, Pencil, Upload, Users, HardDrive, Info, Cloud, Server, Download } from 'lucide-react';
 import { AppState, Account, Role, blankState, normalizeState, Worker, APP_CODE } from '../store';
 import { money, Modal, Field, inputCls, PhotoInput, MoneyField, StatCard, WhatsAppBtn } from '../components/ui';
 import { clearFiles } from '../lib/files';
 import {
-  getServerUrl, setServerUrl, ping, backupState, restoreState, syncDirectory, checkUpdate, UpdateInfo,
+  getServerUrl, setServerUrl, ping, backupState, restoreState, checkUpdate, UpdateInfo,
 } from '../lib/server';
 
 type Props = {
@@ -30,7 +30,6 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
 
   // cloud server (master)
   const [srvUrl, setSrvUrl] = useState(getServerUrl(state) || state.settings.serverUrl);
-  const [support, setSupport] = useState(state.settings.supportEmail);
   const [srvMsg, setSrvMsg] = useState('');
   const [upd, setUpd] = useState<UpdateInfo | null>(null);
 
@@ -75,14 +74,12 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
   const saveServer = async () => {
     const v = srvUrl.trim();
     setServerUrl(v);
-    setState({ ...state, settings: { ...state.settings, serverUrl: v, supportEmail: support.trim() } });
+    setState({ ...state, settings: { ...state.settings, serverUrl: v } });
     if (!v) { setSrvMsg('Server link cleared — running local only.'); return; }
     const res = await ping();
     setSrvMsg(res.ok ? '✓ Saved — server reachable.' : `✗ Saved, but: ${res.error}`);
   };
 
-  const saveSupport = () =>
-    setState({ ...state, settings: { ...state.settings, supportEmail: support.trim() } });
 
   // shared org backup key: a server username if one exists here, else "org"
   const cloudUser = () => 'owner';
@@ -103,7 +100,6 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
     if (res.data?.v !== 2) { setSrvMsg('✗ That copy is not a Master\'s Eye v2 backup.'); return; }
     const next = normalizeState(res.data, blankState());
     setState(next);
-    await syncDirectory().catch(() => { /* offline */ });
     setSrvMsg('✓ Restored from the server.');
   };
 
@@ -217,10 +213,6 @@ export default function SettingsPage({ state, setState, sync, syncing, account, 
               <Upload size={15} /> Restore
             </button>
           </div>
-          <button onClick={onConsole}
-            className="mt-3 w-full py-3 rounded-2xl bg-gray-900 text-white font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-2">
-            <Smartphone size={15} /> Open Dev console
-          </button>
           {srvMsg && <div className="text-xs font-black mt-2 text-center text-gray-600">{srvMsg}</div>}
           <div className="mt-3 bg-gray-50 rounded-xl p-3 text-[10px] font-bold text-gray-500 leading-relaxed">
             <b>One-time setup:</b> script.google.com → paste <b>tools/apps-script/Backend.gs</b> → Deploy as web app
