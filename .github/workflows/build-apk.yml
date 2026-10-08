@@ -83,7 +83,7 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             name="TheMastersEye-${GITHUB_REF_NAME}.apk"
           else
-            name="TheMastersEye-v2.2.1.apk"
+            name="TheMastersEye-v2.3.0.apk"
           fi
           mv "$d/app-release.apk" "$d/$name"
 
@@ -95,8 +95,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.2.1' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.2.1' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.3.0' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v2.3.0' }}
           target_commitish: ${{ github.sha }}
           files: android/app/build/outputs/apk/release/*.apk
           generate_release_notes: true
