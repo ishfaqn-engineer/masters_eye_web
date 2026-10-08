@@ -64,11 +64,6 @@ export default function MillPage({ state, setState }: Props) {
   const recordPayment = () => {
     if (!payVendor) return;
     let amt = payAmt;
-    if (amt > payVendor.due) {
-      const ok = confirm(`Lot balance is only Rs ${money(payVendor.due)} — record Rs ${money(payVendor.due)} instead?`);
-      if (!ok) return;
-      amt = payVendor.due;
-    }
     if (amt <= 0) { alert('Enter how much you are paying.'); return; }
     setState({
       ...state,
