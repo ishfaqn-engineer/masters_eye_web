@@ -218,6 +218,24 @@ export default function TeamPage({ state, setState }: Props) {
         </div>
       </div>
 
+      {/* Selected date financial activity */}
+      <div className="bg-white rounded-3xl shadow p-4 space-y-2">
+        <div className="font-black uppercase text-sm">Daily details · {selected}</div>
+        <div className="text-xs font-bold text-green-700">Present: {[...(day.masterPresent ? [state.settings.masterName] : []), ...state.workers.filter(w => present.has(w.id)).map(w=>w.name)].join(', ') || 'None recorded'}</div>
+        <div className="text-xs font-bold text-red-600">Absent: {[...(!day.masterPresent ? [state.settings.masterName] : []), ...state.workers.filter(w => !present.has(w.id)).map(w=>w.name)].join(', ') || 'None'}</div>
+        {state.ledger.filter(l=>l.date===selected).map(l=>{
+          const who = l.bucket==='wage' ? (l.refId==='master'?state.settings.masterName:state.workers.find(w=>w.id===l.refId)?.name)
+            : l.bucket==='client' ? state.clients.find(c=>c.id===l.refId)?.name
+            : l.bucket==='vendor' ? state.vendors.find(v=>v.id===l.vendorId)?.name : l.bucket;
+          return <div key={l.id} className="border-t border-gray-100 py-2 flex justify-between text-xs">
+            <span>{l.kind==='in'?'Received from':'Paid to'} {who||l.bucket} · {l.method||'method not set'} · {l.timestamp?new Date(l.timestamp).toLocaleTimeString():''}</span>
+            <b className={l.kind==='in'?'text-green-700':'text-red-600'}>₹{money(l.amount)}</b>
+          </div>;
+        })}
+        {!state.ledger.some(l=>l.date===selected)&&<div className="text-xs text-gray-400">No payments recorded on this date.</div>}
+        <div className="font-black text-xs">Team received (all time): ₹{money(state.ledger.filter(l=>l.bucket==='wage'&&l.kind==='out').reduce((n,l)=>n+l.amount,0))}</div>
+      </div>
+
       {/* Month summary */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-white rounded-2xl p-4 shadow flex items-center gap-3">
