@@ -69,7 +69,7 @@ export default function PaymentsPage({ state, setState }: Props) {
   const payNow = (method: 'cash' | 'online') => {
     if (!payWage) return;
     // clamp to what is still owed — one month can never be overpaid
-    const amt = Math.min(Math.max(0, payAmt), payWage.amount);
+    const amt = Math.max(0, payAmt);
     if (!(amt > 0)) return;
     setState({
       ...state,
@@ -87,7 +87,7 @@ export default function PaymentsPage({ state, setState }: Props) {
      per-lot maths and every consistency check stay exact */
   const recordVendorPayment = (method: 'cash' | 'online') => {
     if (!payVendorFor) return;
-    let left = Math.min(Math.max(0, vendorAmt), payVendorFor.due);
+    let left = Math.max(0, vendorAmt);
     if (!(left > 0)) return;
     const openLots = state.woodLots
       .filter(l => l.vendorId === payVendorFor.vendorId)
@@ -106,6 +106,7 @@ export default function PaymentsPage({ state, setState }: Props) {
       });
       left -= take;
     }
+    if (left > 0 && openLots.length) rows.push({ id: `led${stamp}-advance`, kind: 'out', bucket: 'vendor', refId: openLots[0].lot.id, vendorId: payVendorFor.vendorId, amount: left, date: vendorPayDate || today(), timestamp: new Date().toISOString(), note: `Vendor advance · ${method}`, method });
     if (rows.length) setState({ ...state, ledger: [...state.ledger, ...rows] });
     setPayVendorFor(null); setVendorAmt(0); setVendorPayDate(today());
   };
@@ -342,7 +343,7 @@ export default function PaymentsPage({ state, setState }: Props) {
               {payAmt < payWage.amount
                 ? `Partial — leaves ₹${money(payWage.amount - payAmt)} due this month`
                 : payAmt > payWage.amount
-                  ? `More than due — ₹${money(payWage.amount)} will be recorded`
+                  ? `Advance of ₹${money(payAmt - payWage.amount)} will be recorded`
                   : 'Full settlement of this month'}
             </div>
             <div className="text-xs font-bold text-gray-400 text-center">How did {payWage.name} take the money?</div>
@@ -378,7 +379,7 @@ export default function PaymentsPage({ state, setState }: Props) {
               {vendorAmt < payVendorFor.due
                 ? `Partial — leaves ₹${money(payVendorFor.due - vendorAmt)} on credit`
                 : vendorAmt > payVendorFor.due
-                  ? `More than due — ₹${money(payVendorFor.due)} will be recorded`
+                  ? `Advance of ₹${money(vendorAmt - payVendorFor.due)} will be recorded`
                   : 'Full settlement — balance clears to ✓'}
             </div>
             <div className="text-[10px] font-bold text-gray-400 text-center">Applied to the oldest wood lots first.</div>
