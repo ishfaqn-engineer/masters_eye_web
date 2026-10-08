@@ -4,9 +4,9 @@ import * as D from './derive';
 const sanitize = (n: string) => n.replace(/\D/g, '');
 
 /* One normaliser for every wa.me link in the app.
-   Accepts local (03001234567), national (3001234567) or full international
-   (923001234567) — WhatsApp only accepts full international without the +. */
-export const DEFAULT_CC = '92';
+   Accepts local (09876543210), national (9876543210) or full international
+   (919876543210) — WhatsApp only accepts full international without the +. */
+export const DEFAULT_CC = '91';
 export function normalizePhone(phone: string, cc: string = DEFAULT_CC): string {
   const n = sanitize(phone);
   if (!n) return '';
