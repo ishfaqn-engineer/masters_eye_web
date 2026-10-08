@@ -58,11 +58,11 @@ export default function Calendar({ state, selected, onSelect, month, onMonth }: 
         </button>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 text-center mb-1">
+      <div className="grid grid-cols-7 gap-1.5 text-center mb-2">
         {weekday.map((d, i) => <div key={i} className="text-[10px] font-black text-gray-300">{d}</div>)}
       </div>
 
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-7 gap-1.5">
         {cells.map((date, i) => {
           if (!date) return <div key={'e' + i} />;
           const d = dayOf(state, date);
@@ -74,15 +74,17 @@ export default function Calendar({ state, selected, onSelect, month, onMonth }: 
           const attendanceMarked = state.attendance.some(a=>a.date===date);
           const isToday = date === todayStr;
           const dayNum = Number(date.slice(-2));
+          const friday = new Date(date+'T00:00:00').getDay() === 5;
           return (
             <button
               key={date}
               onClick={() => onSelect(date)}
-              className={`relative aspect-square rounded-xl flex flex-col items-center justify-center transition active:scale-90
-                ${isSel ? 'bg-wood-dark text-white shadow-lg scale-105' : count > 0 ? 'bg-green-100 text-green-900' : 'bg-gray-50 text-gray-400'}
+              className={`relative min-h-[72px] rounded-xl flex flex-col items-center justify-center transition active:scale-90
+                ${isSel ? 'bg-wood-dark text-white shadow-lg scale-105' : friday ? 'bg-rose-100 text-rose-900 ring-1 ring-rose-300' : count > 0 ? 'bg-green-100 text-green-900' : 'bg-gray-50 text-gray-400'}
                 ${isToday && !isSel ? 'ring-2 ring-wood' : ''}`}
             >
               <span className="text-[11px] font-black leading-none">{dayNum}</span>
+              {friday && <span className="text-[8px] font-black">HOL</span>}
               {count > 0 && (
                 <span className={`text-[8px] font-black leading-none mt-0.5 ${isSel ? 'text-white/80' : 'text-green-700'}`}>
                   {count}/{crewSize}
