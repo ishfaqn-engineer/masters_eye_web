@@ -77,15 +77,13 @@ export default function ClientsPage({ state, setState }: Props) {
 
   const receive = () => {
     if (!payFor) return;
-    const due = Math.max(0, D.clientDue(state, payFor));
     if (amount <= 0) { alert('Enter how much cash you received.'); return; }
     // Accept client advances even when there is no outstanding invoice.
-    let amt = amount;
     setState({
       ...state,
       ledger: [...state.ledger, {
         id: 'led' + Date.now() + Math.random().toString(36).slice(2, 6), kind: 'in', bucket: 'client', refId: payFor.id,
-        amount: amt, date: payDate || today(), timestamp: new Date().toISOString(), note: note || 'Payment received', method: payMethod
+        amount, date: payDate || today(), timestamp: new Date().toISOString(), note: note || 'Payment received', method: payMethod
       }]
     });
     setPayFor(null); setAmount(0); setNote(''); setPayDate(today()); setPayMethod('cash');
