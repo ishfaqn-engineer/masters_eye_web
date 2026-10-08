@@ -68,6 +68,10 @@ export default function Calendar({ state, selected, onSelect, month, onMonth }: 
           const d = dayOf(state, date);
           const count = presentCountOn(state, date);
           const isSel = date === selected;
+          const movements = state.ledger.filter(l => l.date === date);
+          const received = movements.filter(l => l.kind === 'in').reduce((n,l)=>n+l.amount,0);
+          const paid = movements.filter(l => l.kind === 'out').reduce((n,l)=>n+l.amount,0);
+          const attendanceMarked = state.attendance.some(a=>a.date===date);
           const isToday = date === todayStr;
           const dayNum = Number(date.slice(-2));
           return (
@@ -84,6 +88,8 @@ export default function Calendar({ state, selected, onSelect, month, onMonth }: 
                   {count}/{crewSize}
                 </span>
               )}
+              {attendanceMarked && <span className="text-[8px] font-black">✓{count} ✕{Math.max(0,crewSize-count)}</span>}
+              {movements.length > 0 && <span className="text-[8px] font-black">₹{received ? '+'+received : ''}{paid ? ' −'+paid : ''}</span>}
               {d.masterPresent && (
                 <span className={`absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full ${isSel ? 'bg-white' : 'bg-blue-500'}`} />
               )}
