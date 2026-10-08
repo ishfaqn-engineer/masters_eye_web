@@ -10,6 +10,15 @@
     <meta name="apple-mobile-web-app-title" content="Master's Eye" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./icon.svg" />
+    <script>
+      if ('serviceWorker' in navigator) {
+        addEventListener('load', function () {
+          navigator.serviceWorker.register('./sw.js').catch(function (err) {
+            console.warn('Offline installation unavailable:', err);
+          });
+        });
+      }
+    </script>
     <title>The Master's Eye - Joinery Mill Manager</title>
     <script>
       window.__me = { errs: [] };
