@@ -77,23 +77,13 @@ export default function ClientsPage({ state, setState }: Props) {
 
   const receive = () => {
     if (!payFor) return;
-    const due = Math.max(0, D.clientDue(state, payFor));
     if (amount <= 0) { alert('Enter how much cash you received.'); return; }
-    if (due <= 0) { alert('Nothing outstanding for this client.'); return; }
-    let amt = amount;
-    if (amount > due) {
-      const ok = confirm(
-        `${payFor.name} actually owes Rs ${money(due)} but you entered Rs ${money(amount)}.\n\n` +
-        `Record only Rs ${money(due)}? Press Cancel to go back and fix the amount.`
-      );
-      if (!ok) return;
-      amt = due;
-    }
+    // Accept client advances even when there is no outstanding invoice.
     setState({
       ...state,
       ledger: [...state.ledger, {
         id: 'led' + Date.now() + Math.random().toString(36).slice(2, 6), kind: 'in', bucket: 'client', refId: payFor.id,
-        amount: amt, date: payDate || today(), timestamp: new Date().toISOString(), note: note || 'Payment received', method: payMethod
+        amount, date: payDate || today(), timestamp: new Date().toISOString(), note: note || 'Payment received', method: payMethod
       }]
     });
     setPayFor(null); setAmount(0); setNote(''); setPayDate(today()); setPayMethod('cash');
@@ -158,8 +148,8 @@ export default function ClientsPage({ state, setState }: Props) {
                   <Package size={11} /> {orders} {orders === 1 ? 'order' : 'orders'} — open
                 </button>
                 <button onClick={() => { setPayFor(c); setAmount(0); setNote(''); setPayDate(today()); setPayMethod('cash'); }}
-                  disabled={rawDue <= 0}
-                  className={`w-full py-2.5 rounded-xl font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-1 ${rawDue > 0 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-400'}`}>
+                  
+                  className={`w-full py-2.5 rounded-xl font-black uppercase text-xs active:scale-95 flex items-center justify-center gap-1 bg-green-600 text-white`}>
                   <Wallet size={14} /> Receive
                 </button>
                 <div className="grid grid-cols-3 gap-1">
